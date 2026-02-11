@@ -176,7 +176,7 @@
           "weekday": "Weekday (0=Monday, 6=Sunday)"
         },
         "data_description": {
-          "name": "e.g., 'Easter Sunday' or 'My Birthday' (the identifier will be created automatically)",
+          "name": "e.g., 'Easter Sunday' or 'My Birthday'",
           "holiday_type": "fixed: specific date | nth_weekday: Nth day of week in month | last_weekday: last occurrence",
           "occurrence": "Which occurrence of the weekday (1st, 2nd, 3rd, 4th, or 5th)",
           "weekday": "0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday"
@@ -202,7 +202,7 @@
           "weekday": "Weekday (0=Monday, 6=Sunday)"
         },
         "data_description": {
-          "name": "e.g., 'Easter Sunday' or 'My Birthday' (the identifier will be created automatically)",
+          "name": "e.g., 'Easter Sunday' or 'My Birthday'",
           "holiday_type": "fixed: specific date | nth_weekday: Nth day of week in month | last_weekday: last occurrence",
           "occurrence": "Which occurrence of the weekday (1st, 2nd, 3rd, 4th, or 5th)",
           "weekday": "0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday"

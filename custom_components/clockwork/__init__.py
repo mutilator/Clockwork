@@ -1,5 +1,7 @@
 """Clockwork integration for Home Assistant."""
 import logging
+import json
+from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -13,11 +15,30 @@ from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS
 _LOGGER = logging.getLogger(__name__)
 
 
+def _load_json_file(filename: str) -> dict:
+    """Load a JSON file from the component directory synchronously."""
+    file_path = Path(__file__).parent / filename
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+
+async def _load_json_async(hass: HomeAssistant, filename: str) -> dict:
+    """Load a JSON file asynchronously using the executor."""
+    return await hass.async_add_executor_job(_load_json_file, filename)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Clockwork from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     calculations = entry.options.get(CONF_CALCULATIONS, entry.data.get(CONF_CALCULATIONS, []))
     hass.data[DOMAIN][entry.entry_id] = calculations
+
+    # Load JSON files once at setup time and cache them in hass.data
+    # This avoids blocking I/O operations in async contexts by using executor
+    if "holidays" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["holidays"] = await _load_json_async(hass, "holidays.json")
+    if "seasons" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["seasons"] = await _load_json_async(hass, "seasons.json")
 
     # Reconcile entities: remove any that don't match configured calculations
     entity_registry = er.async_get(hass)

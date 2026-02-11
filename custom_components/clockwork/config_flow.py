@@ -409,6 +409,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name"): str,
             vol.Required("season"): vol.In(["spring", "summer", "autumn", "winter"]),
+            vol.Required("hemisphere", default="northern"): vol.In(["northern", "southern"]),
             vol.Optional("icon"): str,
         })
 
@@ -939,6 +940,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("season", default=existing_calc.get("season", "spring")): vol.In(["spring", "summer", "autumn", "winter"]),
+            vol.Required("hemisphere", default=existing_calc.get("hemisphere", "northern")): vol.In(["northern", "southern"]),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })
 

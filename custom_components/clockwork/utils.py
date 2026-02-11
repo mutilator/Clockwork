@@ -1,35 +1,28 @@
 """Utility functions for Clockwork date and time calculations."""
-import json
-from pathlib import Path
 from datetime import datetime, date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
-_HOLIDAYS_CACHE: Optional[Dict] = None
-_SEASONS_CACHE: Optional[Dict] = None
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
-
-def _load_json_file(filename: str) -> Dict:
-    """Load a JSON file from the component directory."""
-    file_path = Path(__file__).parent / filename
-    with open(file_path, 'r') as f:
-        return json.load(f)
+from .const import DOMAIN
 
 
-def get_holidays(custom_holidays: Optional[List[Dict]] = None) -> Dict:
-    """Get holidays data from cache or load from file, merged with custom holidays.
+def get_holidays(hass: "HomeAssistant", custom_holidays: Optional[List[Dict]] = None) -> Dict:
+    """Get holidays data from hass.data, merged with custom holidays.
     
     Args:
+        hass: Home Assistant instance
         custom_holidays: Optional list of custom holiday definitions to merge
     
     Returns:
         Dictionary with merged holidays
     """
-    global _HOLIDAYS_CACHE
-    if _HOLIDAYS_CACHE is None:
-        _HOLIDAYS_CACHE = _load_json_file("holidays.json")
+    # Get cached holidays from hass.data (loaded at integration setup)
+    holidays_data = hass.data[DOMAIN].get("holidays", {"holidays": []})
     
     # Create a copy to avoid modifying cache
-    result = _HOLIDAYS_CACHE.copy()
+    result = holidays_data.copy()
     holidays_list = result.get("holidays", []).copy()
     
     # Merge custom holidays if provided
@@ -40,23 +33,26 @@ def get_holidays(custom_holidays: Optional[List[Dict]] = None) -> Dict:
     return result
 
 
-def get_seasons() -> Dict:
-    """Get seasons data from cache or load from file."""
-    global _SEASONS_CACHE
-    if _SEASONS_CACHE is None:
-        _SEASONS_CACHE = _load_json_file("seasons.json")
-    return _SEASONS_CACHE
+def get_seasons(hass: "HomeAssistant") -> Dict:
+    """Get seasons data from hass.data.
+    
+    Args:
+        hass: Home Assistant instance
+    """
+    # Get cached seasons from hass.data (loaded at integration setup)
+    return hass.data[DOMAIN].get("seasons", {"seasons": []})
 
 
-def get_holiday_date(target_year: int, holiday_key: str, custom_holidays: Optional[List[Dict]] = None) -> Optional[date]:
+def get_holiday_date(hass: "HomeAssistant", target_year: int, holiday_key: str, custom_holidays: Optional[List[Dict]] = None) -> Optional[date]:
     """Calculate the date for a given holiday in a specific year.
     
     Args:
+        hass: Home Assistant instance
         target_year: Year to calculate for
         holiday_key: Holiday key to look up
         custom_holidays: Optional list of custom holiday definitions
     """
-    holidays = get_holidays(custom_holidays)
+    holidays = get_holidays(hass, custom_holidays)
     
     for holiday in holidays.get("holidays", []):
         if holiday["key"] == holiday_key:
@@ -124,16 +120,19 @@ def _get_last_weekday(year: int, month: int, weekday: int) -> Optional[date]:
     return None
 
 
-def is_in_season(check_date: date, season_key: str) -> bool:
+def is_in_season(hass: "HomeAssistant", check_date: date, season_key: str, hemisphere: str = "northern") -> bool:
     """Check if a date falls within a given season.
     
     Args:
+        hass: Home Assistant instance
         check_date: Date to check
         season_key: Season key (spring, summer, autumn, winter)
+        hemisphere: Hemisphere ("northern" or "southern"), defaults to "northern"
     """
-    seasons = get_seasons()
+    seasons_data = get_seasons(hass)
+    seasons_list = seasons_data.get(hemisphere, [])
     
-    for season in seasons.get("seasons", []):
+    for season in seasons_list:
         if season["key"] == season_key:
             start_month = season.get("start_month")
             start_day = season.get("start_day")
@@ -142,7 +141,20 @@ def is_in_season(check_date: date, season_key: str) -> bool:
             
             # Convert to date format for comparison
             start_date = date(check_date.year, start_month, start_day)
-            end_date = date(check_date.year, end_month, end_day)
+            
+            # Handle end_date, accounting for leap years (e.g., Feb 29)
+            try:
+                end_date = date(check_date.year, end_month, end_day)
+            except ValueError:
+                # If date is invalid (e.g., Feb 29 in non-leap year), use last day of month
+                if end_month == 2:
+                    # February: use 28 for non-leap years, 29 for leap years
+                    end_date = date(check_date.year, 2, 28)
+                else:
+                    # Other months: fallback to day 1 of next month minus 1
+                    from calendar import monthrange
+                    last_day = monthrange(check_date.year, end_month)[1]
+                    end_date = date(check_date.year, end_month, last_day)
             
             # Handle seasons that wrap around the year (winter)
             if start_month > end_month:
@@ -155,10 +167,11 @@ def is_in_season(check_date: date, season_key: str) -> bool:
     return False
 
 
-def get_days_to_holiday(today: date, holiday_key: str, custom_holidays: Optional[List[Dict]] = None) -> int:
+def get_days_to_holiday(hass: "HomeAssistant", today: date, holiday_key: str, custom_holidays: Optional[List[Dict]] = None) -> int:
     """Calculate days until the next occurrence of a holiday.
     
     Args:
+        hass: Home Assistant instance
         today: Reference date (usually today)
         holiday_key: Holiday key
         custom_holidays: Optional list of custom holiday definitions
@@ -167,7 +180,7 @@ def get_days_to_holiday(today: date, holiday_key: str, custom_holidays: Optional
         Number of days until holiday. Returns 0 if today is the holiday.
         Returns negative number if holiday has passed and won't occur again this year.
     """
-    holiday_date = get_holiday_date(today.year, holiday_key, custom_holidays)
+    holiday_date = get_holiday_date(hass, today.year, holiday_key, custom_holidays)
     
     if holiday_date is None:
         return -1
@@ -176,7 +189,7 @@ def get_days_to_holiday(today: date, holiday_key: str, custom_holidays: Optional
     
     # If holiday has passed, return days to next year's holiday
     if delta < 0:
-        next_year_holiday = get_holiday_date(today.year + 1, holiday_key, custom_holidays)
+        next_year_holiday = get_holiday_date(hass, today.year + 1, holiday_key, custom_holidays)
         if next_year_holiday:
             delta = (next_year_holiday - today).days
     

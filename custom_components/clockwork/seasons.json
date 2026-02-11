@@ -1,36 +1,70 @@
 {
-  "seasons": [
+  "northern": [
     {
       "name": "Spring",
       "key": "spring",
       "start_month": 3,
-      "start_day": 20,
-      "end_month": 6,
-      "end_day": 20
+      "start_day": 1,
+      "end_month": 5,
+      "end_day": 31
     },
     {
       "name": "Summer",
       "key": "summer",
       "start_month": 6,
-      "start_day": 21,
-      "end_month": 9,
-      "end_day": 22
+      "start_day": 1,
+      "end_month": 8,
+      "end_day": 31
     },
     {
       "name": "Autumn",
       "key": "autumn",
       "start_month": 9,
-      "start_day": 23,
-      "end_month": 12,
-      "end_day": 21
+      "start_day": 1,
+      "end_month": 11,
+      "end_day": 30
     },
     {
       "name": "Winter",
       "key": "winter",
       "start_month": 12,
-      "start_day": 22,
-      "end_month": 3,
-      "end_day": 19
+      "start_day": 1,
+      "end_month": 2,
+      "end_day": 29
+    }
+  ],
+  "southern": [
+    {
+      "name": "Spring",
+      "key": "spring",
+      "start_month": 9,
+      "start_day": 1,
+      "end_month": 11,
+      "end_day": 30
+    },
+    {
+      "name": "Summer",
+      "key": "summer",
+      "start_month": 12,
+      "start_day": 1,
+      "end_month": 2,
+      "end_day": 29
+    },
+    {
+      "name": "Autumn",
+      "key": "autumn",
+      "start_month": 3,
+      "start_day": 1,
+      "end_month": 5,
+      "end_day": 31
+    },
+    {
+      "name": "Winter",
+      "key": "winter",
+      "start_month": 6,
+      "start_day": 1,
+      "end_month": 8,
+      "end_day": 31
     }
   ]
 }

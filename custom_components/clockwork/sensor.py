@@ -324,7 +324,7 @@ class ClockworkHolidaySensor(SensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         now = dt_util.now().date()
-        days_to_holiday = get_days_to_holiday(now, self._holiday_key, self._custom_holidays)
+        days_to_holiday = get_days_to_holiday(self.hass, now, self._holiday_key, self._custom_holidays)
         
         if days_to_holiday >= 0:
             self._state = days_to_holiday + self._offset_days

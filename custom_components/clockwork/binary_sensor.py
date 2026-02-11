@@ -188,6 +188,7 @@ class ClockworkSeasonBinarySensor(BinarySensorEntity):
         self.hass = hass
         self._config_entry = config_entry
         self._season = config.get("season", "").lower()
+        self._hemisphere = config.get("hemisphere", "northern").lower()
         self._is_on = False
         self._remove_listener = None
 
@@ -233,7 +234,7 @@ class ClockworkSeasonBinarySensor(BinarySensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         now = dt_util.now().date()
-        self._is_on = is_in_season(now, self._season)
+        self._is_on = is_in_season(self.hass, now, self._season, self._hemisphere)
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
