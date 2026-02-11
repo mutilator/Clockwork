@@ -56,6 +56,8 @@ All configuration is done through the Home Assistant UI. No YAML editing require
    - **Modify Calculation** - Edit existing calculations
    - **Delete Calculation** - Remove calculations
    - **Add Custom Holiday** - Define custom holidays for countdowns
+   - **Modify Custom Holiday** - Edit existing custom holidays
+   - **Delete Custom Holiday** - Remove custom holidays
 
 ### Calculation Types
 
