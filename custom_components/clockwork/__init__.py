@@ -11,6 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS
+from .diagnostics import async_get_config_entry_diagnostics
 
 _LOGGER = logging.getLogger(__name__)
 

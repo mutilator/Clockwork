@@ -16,13 +16,7 @@
       "already_configured": "Clockwork is already configured",
       "no_calculations": "No calculations to delete",
       "no_custom_holidays": "No custom holidays to modify or delete",
-      "unsupported_calculation_type": "Unsupported calculation type",
-      "sensor_added": "Calculation added successfully",
-      "sensor_updated": "Calculation updated successfully",
-      "sensor_deleted": "Calculation deleted successfully",
-      "custom_holiday_added": "Custom holiday added successfully",
-      "custom_holiday_updated": "Custom holiday updated successfully",
-      "custom_holiday_deleted": "Custom holiday deleted successfully"
+      "unsupported_calculation_type": "Unsupported calculation type"
     }
   },
   "options": {

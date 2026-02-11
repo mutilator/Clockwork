@@ -1,7 +1,7 @@
 """Config flow for Clockwork integration."""
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -81,8 +81,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self):
         """Initialize the options flow."""
-        self._selected_calc_index = None
-        self._selected_holiday_index = None
+        self._selected_calc_index: Optional[int] = None
+        self._selected_holiday_index: Optional[int] = None
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None):
         """Manage the options - show main menu."""
@@ -127,7 +127,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_abort(reason="no_calculations")
         
         if user_input is not None:
-            self._selected_calc_index = int(user_input.get("calc_index"))
+            self._selected_calc_index = int(user_input["calc_index"])
             calc = calculations[self._selected_calc_index]
             calc_type = calc.get("type")
             
@@ -167,23 +167,23 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         calc = calculations[self._selected_calc_index]
         
         if calc_type == CALC_TYPE_TIMESPAN:
-            return await self.async_step_modify_timespan(None, calc)
+            return await self.async_step_modify_timespan()
         elif calc_type == CALC_TYPE_OFFSET:
-            return await self.async_step_modify_offset(None, calc)
+            return await self.async_step_modify_offset()
         elif calc_type == CALC_TYPE_DATETIME_OFFSET:
-            return await self.async_step_modify_datetime_offset(None, calc)
+            return await self.async_step_modify_datetime_offset()
         elif calc_type == CALC_TYPE_DATE_RANGE:
-            return await self.async_step_modify_date_range(None, calc)
+            return await self.async_step_modify_date_range()
         elif calc_type == CALC_TYPE_SEASON:
-            return await self.async_step_modify_season(None, calc)
+            return await self.async_step_modify_season()
         elif calc_type == CALC_TYPE_MONTH:
-            return await self.async_step_modify_month(None, calc)
+            return await self.async_step_modify_month()
         elif calc_type == CALC_TYPE_HOLIDAY:
-            return await self.async_step_modify_holiday(None, calc)
+            return await self.async_step_modify_holiday()
         elif calc_type == CALC_TYPE_BETWEEN_DATES:
-            return await self.async_step_modify_between_dates(None, calc)
+            return await self.async_step_modify_between_dates()
         elif calc_type == CALC_TYPE_OUTSIDE_DATES:
-            return await self.async_step_modify_outside_dates(None, calc)
+            return await self.async_step_modify_outside_dates()
         else:
             return self.async_abort(reason="unsupported_calculation_type")
 
@@ -196,7 +196,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "missing_name"
             elif not user_input.get("entity_id"):
                 errors["base"] = "missing_entity_id"
-            elif user_input.get("update_interval") is not None and user_input.get("update_interval") <= 0:
+            elif (interval := user_input.get("update_interval")) is not None and interval <= 0:
                 errors["update_interval"] = "interval_positive"
             else:
                 return await self._save_calculation(
@@ -223,8 +223,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_timespan(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_timespan(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a timespan calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -232,9 +239,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "missing_name"
             elif not user_input.get("entity_id"):
                 errors["base"] = "missing_entity_id"
-            elif user_input.get("update_interval") is not None and user_input.get("update_interval") <= 0:
+            elif (interval := user_input.get("update_interval")) is not None and interval <= 0:
                 errors["update_interval"] = "interval_positive"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_TIMESPAN,
@@ -274,16 +282,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "missing_offset"
             else:
                 # Validate offset format
-                is_valid, error_msg = validate_offset_string(user_input.get("offset"))
+                is_valid, error_msg = validate_offset_string(user_input["offset"])
                 if not is_valid:
                     errors["offset"] = "invalid_offset_format"
                 elif not user_input.get("offset_mode"):
                     errors["base"] = "missing_offset_mode"
                 elif user_input.get("offset_mode") == "pulse":
-                    if not user_input.get("pulse_duration"):
+                    pulse_duration = user_input.get("pulse_duration")
+                    if not pulse_duration:
                         errors["base"] = "missing_pulse_duration"
                     else:
-                        is_valid, _ = validate_offset_string(user_input.get("pulse_duration"))
+                        is_valid, _ = validate_offset_string(pulse_duration)
                         if not is_valid:
                             errors["pulse_duration"] = "invalid_offset_format"
                 elif not user_input.get("trigger_on"):
@@ -327,7 +336,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "missing_offset"
             else:
                 # Validate offset format
-                is_valid, error_msg = validate_offset_string(user_input.get("offset"))
+                is_valid, error_msg = validate_offset_string(user_input["offset"])
                 if not is_valid:
                     errors["offset"] = "invalid_offset_format"
                 else:
@@ -577,16 +586,20 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 try:
                     month = int(user_input.get("month", 0)) if user_input.get("month") else 0
                     if holiday_type == "fixed":
-                        day = int(user_input.get("day", 0)) if user_input.get("day") else 0
+                        day_val = user_input.get("day")
+                        day = int(day_val) if day_val is not None else 0
                         if not (1 <= month <= 12) or not (1 <= day <= 31):
                             errors["base"] = "invalid_fixed_date"
                     elif holiday_type == "nth_weekday":
-                        occurrence = int(user_input.get("occurrence", 0)) if user_input.get("occurrence") else 0
-                        weekday = int(user_input.get("weekday", -1)) if user_input.get("weekday") else -1
+                        occurrence_val = user_input.get("occurrence")
+                        occurrence = int(occurrence_val) if occurrence_val is not None else 0
+                        weekday_val = user_input.get("weekday")
+                        weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (1 <= occurrence <= 5) or not (0 <= weekday <= 6):
                             errors["base"] = "invalid_nth_weekday"
                     elif holiday_type == "last_weekday":
-                        weekday = int(user_input.get("weekday", -1)) if user_input.get("weekday") else -1
+                        weekday_val = user_input.get("weekday")
+                        weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (0 <= weekday <= 6):
                             errors["base"] = "invalid_last_weekday"
                 except (ValueError, TypeError):
@@ -599,9 +612,9 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Required("name"): str,
             vol.Required("holiday_type"): vol.In(["fixed", "nth_weekday", "last_weekday"]),
             vol.Required("month"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
-            vol.Optional("day"): vol.All(vol.Coerce(int), vol.Range(min=1, max=31)),
-            vol.Optional("occurrence"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
-            vol.Optional("weekday"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
+            vol.Optional("day"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31))),
+            vol.Optional("occurrence"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5))),
+            vol.Optional("weekday"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6))),
         })
 
         return self.async_show_form(
@@ -623,9 +636,9 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_abort(reason="no_custom_holidays")
         
         if user_input is not None:
-            self._selected_holiday_index = int(user_input.get("holiday_index"))
+            self._selected_holiday_index = int(user_input["holiday_index"])
             holiday = custom_holidays[self._selected_holiday_index]
-            return await self.async_step_modify_custom_holiday_form(None, holiday)
+            return await self.async_step_modify_custom_holiday_form()
         
         # Build options for SelectSelector - shows friendly names
         options = []
@@ -651,8 +664,12 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_custom_holiday_form(self, user_input: Optional[Dict[str, Any]] = None, existing_holiday: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_custom_holiday_form(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a custom holiday definition."""
+        # Get existing custom holiday
+        custom_holidays = self.config_entry.options.get("custom_holidays", [])
+        existing_holiday = custom_holidays[self._selected_holiday_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -666,31 +683,36 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 try:
                     month = int(user_input.get("month", 0)) if user_input.get("month") else 0
                     if holiday_type == "fixed":
-                        day = int(user_input.get("day", 0)) if user_input.get("day") else 0
+                        day_val = user_input.get("day")
+                        day = int(day_val) if day_val is not None else 0
                         if not (1 <= month <= 12) or not (1 <= day <= 31):
                             errors["base"] = "invalid_fixed_date"
                     elif holiday_type == "nth_weekday":
-                        occurrence = int(user_input.get("occurrence", 0)) if user_input.get("occurrence") else 0
-                        weekday = int(user_input.get("weekday", -1)) if user_input.get("weekday") else -1
+                        occurrence_val = user_input.get("occurrence")
+                        occurrence = int(occurrence_val) if occurrence_val is not None else 0
+                        weekday_val = user_input.get("weekday")
+                        weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (1 <= occurrence <= 5) or not (0 <= weekday <= 6):
                             errors["base"] = "invalid_nth_weekday"
                     elif holiday_type == "last_weekday":
-                        weekday = int(user_input.get("weekday", -1)) if user_input.get("weekday") else -1
+                        weekday_val = user_input.get("weekday")
+                        weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (0 <= weekday <= 6):
                             errors["base"] = "invalid_last_weekday"
                 except (ValueError, TypeError):
                     errors["base"] = "invalid_number_format"
                 
                 if not errors:
+                    assert self._selected_holiday_index is not None
                     return await self._update_custom_holiday(self._selected_holiday_index, user_input)
 
         data_schema = vol.Schema({
             vol.Required("name", default=existing_holiday.get("name", "")): str,
             vol.Required("holiday_type", default=existing_holiday.get("type", "fixed")): vol.In(["fixed", "nth_weekday", "last_weekday"]),
             vol.Required("month", default=existing_holiday.get("month", 1)): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
-            vol.Optional("day", default=existing_holiday.get("day", "")): str,
-            vol.Optional("occurrence", default=existing_holiday.get("occurrence", "")): str,
-            vol.Optional("weekday", default=existing_holiday.get("weekday", "")): str,
+            vol.Optional("day", default=existing_holiday.get("day")): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31))),
+            vol.Optional("occurrence", default=existing_holiday.get("occurrence")): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5))),
+            vol.Optional("weekday", default=existing_holiday.get("weekday")): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6))),
         })
 
         return self.async_show_form(
@@ -712,7 +734,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_abort(reason="no_custom_holidays")
         
         if user_input is not None:
-            self._selected_holiday_index = int(user_input.get("holiday_index"))
+            self._selected_holiday_index = int(user_input["holiday_index"])
             return await self.async_step_delete_custom_holiday_confirm()
         
         # Build options for SelectSelector - shows friendly names
@@ -741,12 +763,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_delete_custom_holiday_confirm(self, user_input: Optional[Dict[str, Any]] = None):
         """Confirm deletion of a custom holiday."""
+        assert self._selected_holiday_index is not None
         if user_input is not None:
             # Get existing custom holidays
             custom_holidays = list(self.config_entry.options.get("custom_holidays", []))
             
             # Get the holiday being deleted before removing it
-            holiday_index = self._selected_holiday_index
+            holiday_index = cast(int, self._selected_holiday_index)
             if 0 <= holiday_index < len(custom_holidays):
                 removed = custom_holidays[holiday_index]
                 holiday_name = removed.get('name', f'Holiday {holiday_index + 1}')
@@ -775,8 +798,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
             
-            # Close the config window
-            return self.async_abort(reason="custom_holiday_deleted")
+            # Return to main menu
+            return await self.async_step_init()
         
         # Get the holiday being deleted
         custom_holidays = self.config_entry.options.get("custom_holidays", [])
@@ -792,8 +815,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_offset(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_offset(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying an offset calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -804,22 +834,24 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("offset"):
                 errors["base"] = "missing_offset"
             else:
-                is_valid, error_msg = validate_offset_string(user_input.get("offset"))
+                is_valid, error_msg = validate_offset_string(user_input["offset"])
                 if not is_valid:
                     errors["offset"] = "invalid_offset_format"
                 elif not user_input.get("offset_mode"):
                     errors["base"] = "missing_offset_mode"
                 elif user_input.get("offset_mode") == "pulse":
-                    if not user_input.get("pulse_duration"):
+                    pulse_duration = user_input.get("pulse_duration")
+                    if not pulse_duration:
                         errors["base"] = "missing_pulse_duration"
                     else:
-                        is_valid, _ = validate_offset_string(user_input.get("pulse_duration"))
+                        is_valid, _ = validate_offset_string(pulse_duration)
                         if not is_valid:
                             errors["pulse_duration"] = "invalid_offset_format"
                 elif not user_input.get("trigger_on"):
                     errors["base"] = "missing_trigger_on"
                 
                 if not errors:
+                    assert self._selected_calc_index is not None
                     return await self._update_calculation(
                         self._selected_calc_index,
                         CALC_TYPE_OFFSET,
@@ -845,8 +877,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_datetime_offset(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_datetime_offset(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a datetime offset calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -857,10 +896,11 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("offset"):
                 errors["base"] = "missing_offset"
             else:
-                is_valid, error_msg = validate_offset_string(user_input.get("offset"))
+                is_valid, error_msg = validate_offset_string(user_input["offset"])
                 if not is_valid:
                     errors["offset"] = "invalid_offset_format"
                 else:
+                    assert self._selected_calc_index is not None
                     return await self._update_calculation(
                         self._selected_calc_index,
                         CALC_TYPE_DATETIME_OFFSET,
@@ -886,8 +926,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_date_range(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_date_range(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a date range calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -898,6 +945,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_DATE_RANGE,
@@ -921,8 +969,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_modify_season(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_season(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a season calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -931,6 +986,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("season"):
                 errors["base"] = "missing_season"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_SEASON,
@@ -950,8 +1006,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_modify_month(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_month(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a month calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -960,6 +1023,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("months"):
                 errors["base"] = "missing_months"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_MONTH,
@@ -981,8 +1045,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_holiday(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_holiday(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a holiday calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -991,6 +1062,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("holiday"):
                 errors["base"] = "missing_holiday"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_HOLIDAY,
@@ -1027,8 +1099,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_modify_between_dates(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_between_dates(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying a between dates calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -1039,6 +1118,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_BETWEEN_DATES,
@@ -1062,8 +1142,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_modify_outside_dates(self, user_input: Optional[Dict[str, Any]] = None, existing_calc: Optional[Dict[str, Any]] = None):
+    async def async_step_modify_outside_dates(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle modifying an outside dates calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
         errors = {}
         
         if user_input is not None:
@@ -1074,6 +1161,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
                     CALC_TYPE_OUTSIDE_DATES,
@@ -1128,8 +1216,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         # Reload the integration immediately to set up the new entity
         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Close the config window
-        return self.async_abort(reason="sensor_added")
+        # Return to main menu
+        return await self.async_step_init()
 
     async def _update_calculation(
         self,
@@ -1164,8 +1252,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately to update the entity
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Close the config window
-        return self.async_abort(reason="sensor_updated")
+        # Return to main menu
+        return await self.async_step_init()
 
     async def _update_custom_holiday(self, holiday_index: int, user_input: Dict[str, Any]):
         """Update an existing custom holiday."""
@@ -1192,13 +1280,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             
             # Add type-specific fields
             if user_input.get("month"):
-                holiday["month"] = int(user_input.get("month"))
-            if user_input.get("day"):
-                holiday["day"] = int(user_input.get("day"))
-            if user_input.get("occurrence"):
-                holiday["occurrence"] = int(user_input.get("occurrence"))
-            if user_input.get("weekday") is not None and user_input.get("weekday") != "":
-                holiday["weekday"] = int(user_input.get("weekday"))
+                holiday["month"] = user_input["month"]
+            if "day" in user_input:
+                holiday["day"] = user_input["day"]
+            if "occurrence" in user_input:
+                holiday["occurrence"] = user_input["occurrence"]
+            if "weekday" in user_input and user_input["weekday"] != "":
+                holiday["weekday"] = user_input["weekday"]
             
             custom_holidays[holiday_index] = holiday
             
@@ -1223,8 +1311,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Close the config window
-        return self.async_abort(reason="custom_holiday_updated")
+        # Return to main menu
+        return await self.async_step_init()
 
     async def _save_custom_holiday(self, user_input: Dict[str, Any]):
         """Save a custom holiday definition."""
@@ -1244,13 +1332,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         
         # Add type-specific fields
         if user_input.get("month"):
-            holiday["month"] = int(user_input.get("month"))
-        if user_input.get("day"):
-            holiday["day"] = int(user_input.get("day"))
-        if user_input.get("occurrence"):
-            holiday["occurrence"] = int(user_input.get("occurrence"))
+            holiday["month"] = user_input["month"]
+        if "day" in user_input:
+            holiday["day"] = user_input["day"]
+        if "occurrence" in user_input:
+            holiday["occurrence"] = user_input["occurrence"]
         if user_input.get("weekday") is not None:
-            holiday["weekday"] = int(user_input.get("weekday"))
+            holiday["weekday"] = user_input["weekday"]
         
         custom_holidays.append(holiday)
         
@@ -1275,8 +1363,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         # Reload the integration immediately
         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Close the config window
-        return self.async_abort(reason="custom_holiday_added")
+        # Return to main menu
+        return await self.async_step_init()
 
     async def async_step_delete_calculation(self, user_input: Optional[Dict[str, Any]] = None):
         """Select a calculation to delete."""
@@ -1290,7 +1378,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_abort(reason="no_calculations")
         
         if user_input is not None:
-            self._selected_calc_index = int(user_input.get("calc_index"))
+            self._selected_calc_index = int(user_input["calc_index"])
             return await self.async_step_delete_confirm()
         
         # Build options for SelectSelector - shows friendly names
@@ -1327,7 +1415,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             ))
             
             # Get the calculation being deleted before removing it
-            calc_index = self._selected_calc_index
+            calc_index = cast(int, self._selected_calc_index)
             if 0 <= calc_index < len(calculations):
                 removed = calculations[calc_index]
                 calc_name = removed.get('name', f'Calculation {calc_index + 1}')
@@ -1363,15 +1451,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
             
-            # Close the config window
-            return self.async_abort(reason="sensor_deleted")
+            # Return to main menu
+            return await self.async_step_init()
         
         # Get the calculation being deleted
         calculations = self.config_entry.options.get(
             CONF_CALCULATIONS,
             self.config_entry.data.get(CONF_CALCULATIONS, [])
         )
-        calc_index = self._selected_calc_index
+        calc_index = cast(int, self._selected_calc_index)
         calc = calculations[calc_index] if calc_index < len(calculations) else None
         
         return self.async_show_form(

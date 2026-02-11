@@ -90,6 +90,11 @@ class ClockworkTimespanSensor(SensorEntity):
         """Return the unit of measurement."""
         return "seconds"
 
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         @callback
@@ -207,6 +212,11 @@ class ClockworkDateRangeSensor(SensorEntity):
         """Return the unit of measurement."""
         return "hours"
 
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         @callback
@@ -307,6 +317,11 @@ class ClockworkHolidaySensor(SensorEntity):
         """Return the unit of measurement."""
         return "days"
 
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         # Initial state
@@ -376,6 +391,11 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
     def state(self) -> Optional[str]:
         """Return the state of the sensor."""
         return self._state
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""

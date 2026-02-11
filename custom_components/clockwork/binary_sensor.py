@@ -90,6 +90,11 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
         """Return true if the binary sensor is on."""
         return self._is_on
 
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         @callback
@@ -217,6 +222,11 @@ class ClockworkSeasonBinarySensor(BinarySensorEntity):
         """Return true if the binary sensor is on."""
         return self._is_on
 
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         # Initial state
@@ -278,6 +288,11 @@ class ClockworkMonthBinarySensor(BinarySensorEntity):
     def is_on(self) -> bool:
         """Return true if the binary sensor is on."""
         return self._is_on
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -342,6 +357,11 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
     def is_on(self) -> bool:
         """Return true if the binary sensor is on."""
         return self._is_on
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -455,6 +475,11 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
     def is_on(self) -> bool:
         """Return true if the binary sensor is on."""
         return self._is_on
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return self._config
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
