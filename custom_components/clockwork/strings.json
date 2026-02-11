@@ -214,7 +214,7 @@
       },
       "delete_custom_holiday_confirm": {
         "title": "Confirm Deletion",
-        "description": "Are you sure you want to delete the custom holiday '{name}' ({key})?"
+        "description": "Are you sure you want to delete the custom holiday {name} ({key})?"
       },
       "delete_calculation": {
         "title": "Delete Calculation",
@@ -222,7 +222,7 @@
       },
       "delete_confirm": {
         "title": "Confirm Deletion",
-        "description": "Are you sure you want to delete the calculation '{name}' ({type})?"
+        "description": "Are you sure you want to delete the calculation {name} ({type})?"
       },
       "modify_timespan": {
         "title": "Modify Timespan Calculation",
