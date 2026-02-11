@@ -1,0 +1,150 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Setup Clockwork",
+        "description": "Create a Clockwork instance for date and time calculations",
+        "data": {
+          "name": "Instance Name"
+        }
+      }
+    },
+    "error": {
+      "invalid_calculation": "Invalid calculation configuration"
+    },
+    "abort": {
+      "already_configured": "Clockwork is already configured",
+      "no_calculations": "No calculations to delete"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Clockwork Calculations",
+        "description": "Add and manage date/time calculations"
+      },
+      "timespan": {
+        "title": "Timespan Calculation",
+        "description": "Calculate duration since an entity changed state",
+        "data": {
+          "name": "Calculation Name",
+          "entity_id": "Entity to Monitor",
+          "icon": "Icon (optional)"
+        }
+      },
+      "offset": {
+        "title": "Offset Calculation",
+        "description": "Add time offset to when an entity changes state",
+        "data": {
+          "name": "Calculation Name",
+          "entity_id": "Entity to Monitor",
+          "offset": "Time Offset (e.g., '1 hour', '30 minutes')",
+          "offset_mode": "Behavior Mode",
+          "pulse_duration": "Pulse Duration (pulse mode only)",
+          "trigger_on": "Trigger Event",
+          "icon": "Icon (optional)"
+        },
+        "data_description": {
+          "offset_mode": "pulse: turns ON for pulse_duration then OFF | duration: stays ON until trigger condition ends | latch: turns ON and stays ON",
+          "pulse_duration": "How long pulse stays ON (e.g., '5 minutes'). If not set, equals offset time.",
+          "trigger_on": "Which state change triggers: on (turns ON), off (turns OFF), or both (any state change). Applies to all modes."
+        }
+      },
+      "datetime_offset": {
+        "title": "Datetime Offset",
+        "description": "Apply time offset to a datetime entity/helper",
+        "data": {
+          "name": "Calculation Name",
+          "datetime_entity": "Datetime Entity",
+          "offset": "Time Offset (e.g., '1 hour', '-30 minutes')",
+          "icon": "Icon (optional)"
+        }
+      },
+      "date_range": {
+        "title": "Date Range Duration",
+        "description": "Measure duration between two datetime entities",
+        "data": {
+          "name": "Calculation Name",
+          "start_datetime_entity": "Start Datetime Entity",
+          "end_datetime_entity": "End Datetime Entity",
+          "icon": "Icon (optional)"
+        }
+      },
+      "season": {
+        "title": "Season Detection",
+        "description": "Check if current date is within a season",
+        "data": {
+          "name": "Calculation Name",
+          "season": "Season",
+          "icon": "Icon (optional)"
+        }
+      },
+      "month": {
+        "title": "Month Detection",
+        "description": "Check if current date is within specified months",
+        "data": {
+          "name": "Calculation Name",
+          "months": "Months (comma-separated: 1-12)",
+          "icon": "Icon (optional)"
+        }
+      },
+      "holiday": {
+        "title": "Holiday Countdown",
+        "description": "Calculate days until a US holiday",
+        "data": {
+          "name": "Calculation Name",
+          "holiday": "Holiday",
+          "offset": "Day Offset (optional)",
+          "icon": "Icon (optional)"
+        }
+      },
+      "between_dates": {
+        "title": "Between Dates Check",
+        "description": "Binary sensor true when current time is between two datetimes",
+        "data": {
+          "name": "Calculation Name",
+          "start_datetime_entity": "Start Datetime Entity",
+          "end_datetime_entity": "End Datetime Entity",
+          "icon": "Icon (optional)"
+        }
+      },
+      "outside_dates": {
+        "title": "Outside Dates Check",
+        "description": "Binary sensor true when current time is OUTSIDE a date range",
+        "data": {
+          "name": "Calculation Name",
+          "start_datetime_entity": "Start Datetime Entity",
+          "end_datetime_entity": "End Datetime Entity",
+          "icon": "Icon (optional)"
+        }
+      },
+      "custom_holiday": {
+        "title": "Define Custom Holiday",
+        "description": "Add a custom holiday for use in holiday countdown calculations",
+        "data": {
+          "name": "Holiday Display Name",
+          "holiday_key": "Holiday Key (identifier)",
+          "holiday_type": "Holiday Type",
+          "month": "Month (1-12)",
+          "day": "Day (1-31, for fixed holidays)",
+          "occurrence": "Occurrence (1-5, for nth weekday)",
+          "weekday": "Weekday (0=Monday, 6=Sunday)"
+        },
+        "data_description": {
+          "holiday_key": "Unique identifier (e.g., 'easter_sunday')",
+          "holiday_type": "fixed: specific date | nth_weekday: Nth day of week in month | last_weekday: last occurrence",
+          "occurrence": "Which occurrence of the weekday (1st, 2nd, 3rd, 4th, or 5th)",
+          "weekday": "0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday"
+        }
+      },
+      "delete_calculation": {
+        "title": "Delete Calculation",
+        "description": "Select a calculation to delete"
+      },
+      "delete_confirm": {
+        "title": "Confirm Deletion",
+        "description": "Are you sure you want to delete the calculation '{name}' ({type})?"
+      }
+    }
+  }
+}

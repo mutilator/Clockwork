@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Wiki & Documentation
+    url: https://github.com/mutilator/clockwork/wiki
+    about: Check the comprehensive wiki for examples, guides, and walkthroughs
+  - name: Home Assistant Community Forums
+    url: https://community.home-assistant.io/
+    about: Ask questions and get help from the Home Assistant community

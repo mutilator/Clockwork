@@ -1,0 +1,86 @@
+{
+  "holidays": [
+    {
+      "name": "New Year's Day",
+      "key": "new_years_day",
+      "type": "fixed",
+      "month": 1,
+      "day": 1
+    },
+    {
+      "name": "MLK Jr. Day",
+      "key": "mlk_day",
+      "type": "nth_weekday",
+      "month": 1,
+      "occurrence": 3,
+      "weekday": 0
+    },
+    {
+      "name": "Presidents Day",
+      "key": "presidents_day",
+      "type": "nth_weekday",
+      "month": 2,
+      "occurrence": 3,
+      "weekday": 0
+    },
+    {
+      "name": "Memorial Day",
+      "key": "memorial_day",
+      "type": "last_weekday",
+      "month": 5,
+      "weekday": 0
+    },
+    {
+      "name": "Juneteenth",
+      "key": "juneteenth",
+      "type": "fixed",
+      "month": 6,
+      "day": 19
+    },
+    {
+      "name": "Independence Day",
+      "key": "independence_day",
+      "type": "fixed",
+      "month": 7,
+      "day": 4
+    },
+    {
+      "name": "Labor Day",
+      "key": "labor_day",
+      "type": "nth_weekday",
+      "month": 9,
+      "occurrence": 1,
+      "weekday": 0
+    },
+    {
+      "name": "Columbus Day",
+      "key": "columbus_day",
+      "type": "nth_weekday",
+      "month": 10,
+      "occurrence": 2,
+      "weekday": 0
+    },
+    {
+      "name": "Veterans Day",
+      "key": "veterans_day",
+      "type": "fixed",
+      "month": 11,
+      "day": 11
+    },
+    {
+      "name": "Thanksgiving",
+      "key": "thanksgiving",
+      "type": "nth_weekday",
+      "month": 11,
+      "occurrence": 4,
+      "weekday": 3
+    },
+    {
+      "name": "Christmas",
+      "key": "christmas",
+      "type": "fixed",
+      "month": 12,
+      "day": 25
+    }
+  ]
+}
