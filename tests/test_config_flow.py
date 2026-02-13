@@ -313,7 +313,8 @@ class TestClockworkOptionsFlowCustomHolidays:
         
         options_flow.hass.config_entries.async_update_entry.assert_called_once()
         options_flow.hass.config_entries.async_reload.assert_called_once()
-        assert result["type"] == "menu"
+        assert result["type"] == "abort"
+        assert result["reason"] == "holiday_deleted"
 
     @pytest.mark.asyncio
     async def test_delete_custom_holiday_show_form(self, options_flow):

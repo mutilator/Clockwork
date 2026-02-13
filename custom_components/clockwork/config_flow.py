@@ -50,7 +50,7 @@ def _generate_holiday_key(name: str) -> str:
     return key
 
 
-class ClockworkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ClockworkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Clockwork."""
 
     VERSION = 1

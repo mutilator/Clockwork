@@ -1,7 +1,7 @@
 """Utility functions for Clockwork date and time calculations."""
 import logging
 from datetime import datetime, date, timedelta
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -486,7 +486,7 @@ def apply_offset_to_datetime(base_datetime: datetime, offset_str: str) -> Option
         return base_datetime
 
 
-def scan_automations_for_time_usage(hass: "HomeAssistant") -> Dict[str, dict]:
+def scan_automations_for_time_usage(hass: "HomeAssistant") -> Dict[str, Any]:
     """Scan automations.yaml for automations using date/time functions.
     
     Searches for common date/time patterns in automation triggers and conditions.
@@ -508,8 +508,15 @@ def scan_automations_for_time_usage(hass: "HomeAssistant") -> Dict[str, dict]:
         }
     """
     import re
-    import yaml
     from pathlib import Path
+    
+    result: Dict[str, Any] = {'automations': []}
+    
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        _LOGGER.warning("PyYAML not available, automation scanning disabled")
+        return result
     
     # Patterns to search for in automation content
     time_patterns = {
@@ -523,8 +530,6 @@ def scan_automations_for_time_usage(hass: "HomeAssistant") -> Dict[str, dict]:
         'time_field': r'\b(hour|minute|second|month|day|year|date|time):\s*',  # time fields
         'timestamp': r'\b(timestamp|epoch)\b',  # timestamp references
     }
-    
-    result = {'automations': []}
     
     try:
         # Try to load automations.yaml from config directory
