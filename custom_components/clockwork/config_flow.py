@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, Optional, Tuple, cast
 
 from homeassistant import config_entries
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 import voluptuous as vol
@@ -12,6 +13,7 @@ from .utils import validate_offset_string
 from .const import (
     DOMAIN, 
     CONF_CALCULATIONS,
+    CONF_AUTO_CREATE_HOLIDAYS,
     CALC_TYPE_TIMESPAN,
     CALC_TYPE_OFFSET,
     CALC_TYPE_DATETIME_OFFSET,
@@ -131,6 +133,76 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         
         return True, None
 
+    def _validate_datetime_entity(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+        """Validate that an entity is suitable for datetime calculations.
+        
+        Checks if the entity either:
+        - Is in a datetime-compatible domain (time, calendar, input_datetime), or
+        - Is a sensor with date/timestamp device_class (from registry or state attributes)
+        
+        Args:
+            entity_id: The entity to validate
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        from homeassistant.helpers import entity_registry as er
+        
+        if not entity_id:
+            _LOGGER.debug(f"Datetime validation: Empty entity_id, skipping validation")
+            return True, None
+        
+        _LOGGER.debug(f"Datetime validation: Validating entity '{entity_id}'")
+        
+        entity_registry = er.async_get(self.hass)
+        entity = None
+        
+        for reg_entity in entity_registry.entities.values():
+            if reg_entity.entity_id == entity_id:
+                entity = reg_entity
+                break
+        
+        if not entity:
+            error_msg = f"Entity '{entity_id}' not found in registry"
+            _LOGGER.debug(f"Datetime validation: {error_msg}")
+            return False, error_msg
+        
+        domain = entity.domain
+        device_class = entity.device_class
+        
+        _LOGGER.debug(f"Datetime validation: Entity '{entity_id}' has domain='{domain}', device_class='{device_class}' (type: {type(device_class).__name__})")
+        
+        # These domains are always suitable for datetime calculations
+        datetime_safe_domains = ["time", "calendar", "input_datetime"]
+        if domain in datetime_safe_domains:
+            _LOGGER.debug(f"Datetime validation: Entity '{entity_id}' domain '{domain}' is in safe domains, validation passed")
+            return True, None
+        
+        # For sensor domain, check device_class from registry first, then fall back to state attributes
+        if domain == "sensor":
+            # Check against both enum and string values for device_class comparison
+            valid_device_classes = {SensorDeviceClass.DATE, SensorDeviceClass.TIMESTAMP, "date", "timestamp"}
+            
+            # If not in registry, check state attributes
+            if device_class is None:
+                state = self.hass.states.get(entity_id)
+                if state and "device_class" in state.attributes:
+                    device_class = state.attributes["device_class"]
+                    _LOGGER.debug(f"Datetime validation: Found device_class in state attributes: '{device_class}'")
+            
+            _LOGGER.debug(f"Datetime validation: Sensor entity '{entity_id}' - checking device_class '{device_class}' against valid classes: {valid_device_classes}")
+            if device_class in valid_device_classes:
+                _LOGGER.debug(f"Datetime validation: Sensor entity '{entity_id}' device_class is valid, validation passed")
+                return True, None
+            else:
+                error_msg = f"Sensor '{entity_id}' has device_class '{device_class}'. Expected 'date' or 'timestamp' for datetime calculations."
+                _LOGGER.debug(f"Datetime validation: {error_msg}")
+                return False, error_msg
+        
+        error_msg = f"Entity '{entity_id}' (domain: {domain}) is not suitable for datetime calculations. Use entities from: time, calendar, input_datetime, or sensor (with date/timestamp device_class)."
+        _LOGGER.debug(f"Datetime validation: {error_msg}")
+        return False, error_msg
+
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None):
         """Manage the options - show main menu."""
         return self.async_show_menu(
@@ -142,6 +214,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 "custom_holiday": "Add Custom Holiday",
                 "modify_custom_holiday": "Modify Custom Holiday",
                 "delete_custom_holiday": "Delete Custom Holiday",
+                "settings": "Settings",
                 "scan_automations": "Scan Automations for Time Patterns",
             },
         )
@@ -161,6 +234,36 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 "between_dates": "Between Dates Check",
                 "outside_dates": "Outside Dates Check",
             },
+        )
+
+    async def async_step_settings(self, user_input: Optional[Dict[str, Any]] = None):
+        """Handle settings configuration."""
+        if user_input is not None:
+            # Update config entry options with settings
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                options={
+                    **self.config_entry.options,
+                    CONF_AUTO_CREATE_HOLIDAYS: user_input.get(CONF_AUTO_CREATE_HOLIDAYS, True),
+                }
+            )
+            # Reload the entry to apply changes
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return self.async_abort(reason="settings_updated")
+
+        # Get current settings with defaults
+        auto_create = self.config_entry.options.get(CONF_AUTO_CREATE_HOLIDAYS, True)
+
+        data_schema = vol.Schema({
+            vol.Required(CONF_AUTO_CREATE_HOLIDAYS, default=auto_create): bool,
+        })
+
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=data_schema,
+            description_placeholders={
+                "auto_create_help": "When enabled, sensors will be automatically created for all built-in US holidays. When disabled, only custom holidays will create sensors."
+            }
         )
 
     async def async_step_modify_calculation(self, user_input: Optional[Dict[str, Any]] = None):
@@ -239,13 +342,23 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle timespan calculation."""
         errors = {}
         
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("entity_id"): selector.EntitySelector(),
-            vol.Optional("track_state", default="on"): vol.In(["on", "off", "both"]),
-            vol.Optional("update_interval", default=60): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("entity_id", default=user_input.get("entity_id", "")): selector.EntitySelector(),
+                vol.Optional("track_state", default=user_input.get("track_state", "on")): vol.In(["on", "off", "both"]),
+                vol.Optional("update_interval", default=user_input.get("update_interval", 60)): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("entity_id"): selector.EntitySelector(),
+                vol.Optional("track_state", default="on"): vol.In(["on", "off", "both"]),
+                vol.Optional("update_interval", default=60): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                vol.Optional("icon"): str,
+            })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -308,13 +421,14 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     user_input
                 )
 
-        # Pre-populate with existing values
+        # Pre-populate with user_input if available (validation error case), otherwise existing_calc
+        defaults = user_input if user_input is not None else existing_calc
         data_schema = vol.Schema({
-            vol.Required("name", default=existing_calc.get("name", "")): str,
-            vol.Required("entity_id", default=existing_calc.get("entity_id", "")): selector.EntitySelector(),
-            vol.Optional("track_state", default=existing_calc.get("track_state", "on")): vol.In(["on", "off", "both"]),
-            vol.Optional("update_interval", default=existing_calc.get("update_interval", 60)): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("entity_id", default=defaults.get("entity_id", "")): selector.EntitySelector(),
+            vol.Optional("track_state", default=defaults.get("track_state", "on")): vol.In(["on", "off", "both"]),
+            vol.Optional("update_interval", default=defaults.get("update_interval", 60)): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("icon", default=defaults.get("icon", "")): str,
         })
 
         return self.async_show_form(
@@ -332,15 +446,27 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle offset calculation."""
         errors = {}
         
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("entity_id"): selector.EntitySelector(),
-            vol.Required("offset"): str,
-            vol.Required("offset_mode", default="latch"): vol.In(["pulse", "duration", "latch"]),
-            vol.Optional("pulse_duration"): str,
-            vol.Required("trigger_on", default="on"): vol.In(["on", "off", "both"]),
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("entity_id", default=user_input.get("entity_id", "")): selector.EntitySelector(),
+                vol.Required("offset", default=user_input.get("offset", "")): str,
+                vol.Required("offset_mode", default=user_input.get("offset_mode", "latch")): vol.In(["pulse", "duration", "latch"]),
+                vol.Optional("pulse_duration", default=user_input.get("pulse_duration", "")): str,
+                vol.Required("trigger_on", default=user_input.get("trigger_on", "on")): vol.In(["on", "off", "both"]),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("entity_id"): selector.EntitySelector(),
+                vol.Required("offset"): str,
+                vol.Required("offset_mode", default="latch"): vol.In(["pulse", "duration", "latch"]),
+                vol.Optional("pulse_duration"): str,
+                vol.Required("trigger_on", default="on"): vol.In(["on", "off", "both"]),
+                vol.Optional("icon"): str,
+            })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -384,8 +510,6 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         user_input
                     )
 
-        
-
         return self.async_show_form(
             step_id="offset",
             data_schema=data_schema,
@@ -399,14 +523,25 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle datetime offset calculation."""
         errors = {}
         
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Required("offset"): str,
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("datetime_entity", default=user_input.get("datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("offset", default=user_input.get("offset", "")): str,
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("offset"): str,
+                vol.Optional("icon"): str,
+            })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -432,6 +567,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                             errors=errors,
                             description_placeholders=description_placeholder
                         )
+                    # Validate that the entity is suitable for datetime calculations
+                    is_valid, error_msg = self._validate_datetime_entity(user_input.get("datetime_entity", ""))
+                    if not is_valid:
+                        errors["datetime_entity"] = "invalid_datetime_entity"
+                        description_placeholders = {"error": f"\n\n**Error: {error_msg}**"}
+                        return self.async_show_form(
+                            step_id="datetime_offset",
+                            data_schema=data_schema,
+                            errors=errors,
+                            description_placeholders=description_placeholders
+                        )
                     return await self._save_calculation(
                         CALC_TYPE_DATETIME_OFFSET,
                         user_input
@@ -451,16 +597,29 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle date range calculation."""
         errors = {}
         
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
-            ),
-            vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
-            ),
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("start_datetime_entity", default=user_input.get("start_datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("end_datetime_entity", default=user_input.get("end_datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("start_datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("end_datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Optional("icon"): str,
+            })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -480,6 +639,28 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         data_schema=data_schema,
                         errors=errors,
                         description_placeholders=description_placeholder
+                    )
+                # Validate that both entities are suitable for datetime calculations
+                start_valid, start_error = self._validate_datetime_entity(user_input.get("start_datetime_entity", ""))
+                end_valid, end_error = self._validate_datetime_entity(user_input.get("end_datetime_entity", ""))
+                
+                if not start_valid:
+                    errors["start_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {start_error}**"}
+                    return self.async_show_form(
+                        step_id="date_range",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
+                if not end_valid:
+                    errors["end_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {end_error}**"}
+                    return self.async_show_form(
+                        step_id="date_range",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
                     )
                 return await self._save_calculation(
                     CALC_TYPE_DATE_RANGE,
@@ -509,12 +690,21 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     user_input
                 )
 
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("season"): vol.In(["spring", "summer", "autumn", "winter"]),
-            vol.Required("hemisphere", default="northern"): vol.In(["northern", "southern"]),
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("season", default=user_input.get("season", "")): vol.In(["spring", "summer", "autumn", "winter"]),
+                vol.Required("hemisphere", default=user_input.get("hemisphere", "northern")): vol.In(["northern", "southern"]),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("season"): vol.In(["spring", "summer", "autumn", "winter"]),
+                vol.Required("hemisphere", default="northern"): vol.In(["northern", "southern"]),
+                vol.Optional("icon"): str,
+            })
 
         return self.async_show_form(
             step_id="season",
@@ -537,11 +727,19 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     user_input
                 )
 
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("months"): str,
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("months", default=user_input.get("months", "")): str,
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("months"): str,
+                vol.Optional("icon"): str,
+            })
 
         return self.async_show_form(
             step_id="month",
@@ -588,12 +786,21 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             if holiday_key and holiday_key not in holidays:
                 holidays.append(holiday_key)
 
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("holiday"): vol.In(holidays),
-            vol.Optional("offset", default=0): vol.Coerce(int),
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("holiday", default=user_input.get("holiday", "")): vol.In(holidays),
+                vol.Optional("offset", default=user_input.get("offset", 0)): vol.Coerce(int),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("holiday"): vol.In(holidays),
+                vol.Optional("offset", default=0): vol.Coerce(int),
+                vol.Optional("icon"): str,
+            })
 
         return self.async_show_form(
             step_id="holiday",
@@ -608,16 +815,29 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle between dates calculation."""
         errors = {}
         
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Optional("icon"): str,
-        })
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("start_datetime_entity", default=user_input.get("start_datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("end_datetime_entity", default=user_input.get("end_datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("start_datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("end_datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Optional("icon"): str,
+            })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -638,6 +858,28 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         errors=errors,
                         description_placeholders=description_placeholder
                     )
+                # Validate that both entities are suitable for datetime calculations
+                start_valid, start_error = self._validate_datetime_entity(user_input.get("start_datetime_entity", ""))
+                end_valid, end_error = self._validate_datetime_entity(user_input.get("end_datetime_entity", ""))
+                
+                if not start_valid:
+                    errors["start_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {start_error}**"}
+                    return self.async_show_form(
+                        step_id="between_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
+                if not end_valid:
+                    errors["end_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {end_error}**"}
+                    return self.async_show_form(
+                        step_id="between_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
                 return await self._save_calculation(
                     CALC_TYPE_BETWEEN_DATES,
                     user_input
@@ -652,16 +894,30 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_outside_dates(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle outside dates calculation."""
         errors = {}
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Optional("icon"): str,
-        })
+        
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("start_datetime_entity", default=user_input.get("start_datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("end_datetime_entity", default=user_input.get("end_datetime_entity", "")): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("start_datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Required("end_datetime_entity"): selector.EntitySelector(
+                    {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                ),
+                vol.Optional("icon"): str,
+            })
 
         if user_input is not None:
             if not user_input.get("name"):
@@ -681,6 +937,28 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         data_schema=data_schema,
                         errors=errors,
                         description_placeholders=description_placeholder
+                    )
+                # Validate that both entities are suitable for datetime calculations
+                start_valid, start_error = self._validate_datetime_entity(user_input.get("start_datetime_entity", ""))
+                end_valid, end_error = self._validate_datetime_entity(user_input.get("end_datetime_entity", ""))
+                
+                if not start_valid:
+                    errors["start_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {start_error}**"}
+                    return self.async_show_form(
+                        step_id="outside_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
+                if not end_valid:
+                    errors["end_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {end_error}**"}
+                    return self.async_show_form(
+                        step_id="outside_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
                     )
                 return await self._save_calculation(
                     CALC_TYPE_OUTSIDE_DATES,
@@ -711,33 +989,52 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         day_val = user_input.get("day")
                         day = int(day_val) if day_val is not None else 0
                         if not (1 <= month <= 12) or not (1 <= day <= 31):
-                            errors["base"] = "invalid_fixed_date"
+                            errors["day"] = "invalid_fixed_date"
                     elif holiday_type == "nth_weekday":
                         occurrence_val = user_input.get("occurrence")
                         occurrence = int(occurrence_val) if occurrence_val is not None else 0
                         weekday_val = user_input.get("weekday")
                         weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (1 <= occurrence <= 5) or not (0 <= weekday <= 6):
-                            errors["base"] = "invalid_nth_weekday"
+                            errors["occurrence"] = "invalid_nth_weekday"
                     elif holiday_type == "last_weekday":
                         weekday_val = user_input.get("weekday")
                         weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (0 <= weekday <= 6):
-                            errors["base"] = "invalid_last_weekday"
+                            errors["weekday"] = "invalid_last_weekday"
                 except (ValueError, TypeError):
                     errors["base"] = "invalid_number_format"
                 
                 if not errors:
                     return await self._save_custom_holiday(user_input)
 
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("holiday_type"): vol.In(["fixed", "nth_weekday", "last_weekday"]),
-            vol.Required("month"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
-            vol.Optional("day"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31))),
-            vol.Optional("occurrence"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5))),
-            vol.Optional("weekday"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6))),
-        })
+        # Build schema with defaults from user_input for repopulation on error
+        defaults = user_input if user_input else {}
+        
+        # Build field dict, only adding defaults for optional fields if they have values
+        schema_dict = {
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("holiday_type", default=defaults.get("holiday_type")): vol.In(["fixed", "nth_weekday", "last_weekday"]),
+            vol.Required("month", default=defaults.get("month")): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+        }
+        
+        # Add optional fields only with defaults if they have values
+        if "day" in defaults and defaults.get("day") is not None:
+            schema_dict[vol.Optional("day", default=defaults["day"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
+        else:
+            schema_dict[vol.Optional("day")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
+        
+        if "occurrence" in defaults and defaults.get("occurrence") is not None:
+            schema_dict[vol.Optional("occurrence", default=defaults["occurrence"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+        else:
+            schema_dict[vol.Optional("occurrence")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+        
+        if "weekday" in defaults and defaults.get("weekday") is not None:
+            schema_dict[vol.Optional("weekday", default=defaults["weekday"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
+        else:
+            schema_dict[vol.Optional("weekday")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
+        
+        data_schema = vol.Schema(schema_dict)
 
         return self.async_show_form(
             step_id="custom_holiday",
@@ -808,19 +1105,19 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         day_val = user_input.get("day")
                         day = int(day_val) if day_val is not None else 0
                         if not (1 <= month <= 12) or not (1 <= day <= 31):
-                            errors["base"] = "invalid_fixed_date"
+                            errors["day"] = "invalid_fixed_date"
                     elif holiday_type == "nth_weekday":
                         occurrence_val = user_input.get("occurrence")
                         occurrence = int(occurrence_val) if occurrence_val is not None else 0
                         weekday_val = user_input.get("weekday")
                         weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (1 <= occurrence <= 5) or not (0 <= weekday <= 6):
-                            errors["base"] = "invalid_nth_weekday"
+                            errors["occurrence"] = "invalid_nth_weekday"
                     elif holiday_type == "last_weekday":
                         weekday_val = user_input.get("weekday")
                         weekday = int(weekday_val) if weekday_val is not None else -1
                         if not (1 <= month <= 12) or not (0 <= weekday <= 6):
-                            errors["base"] = "invalid_last_weekday"
+                            errors["weekday"] = "invalid_last_weekday"
                 except (ValueError, TypeError):
                     errors["base"] = "invalid_number_format"
                 
@@ -828,14 +1125,33 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     assert self._selected_holiday_index is not None
                     return await self._update_custom_holiday(self._selected_holiday_index, user_input)
 
-        data_schema = vol.Schema({
-            vol.Required("name", default=existing_holiday.get("name", "")): str,
-            vol.Required("holiday_type", default=existing_holiday.get("type", "fixed")): vol.In(["fixed", "nth_weekday", "last_weekday"]),
-            vol.Required("month", default=existing_holiday.get("month", 1)): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
-            vol.Optional("day", default=existing_holiday.get("day")): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31))),
-            vol.Optional("occurrence", default=existing_holiday.get("occurrence")): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5))),
-            vol.Optional("weekday", default=existing_holiday.get("weekday")): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6))),
-        })
+        # Build schema with defaults - use user_input if there's an error, otherwise use existing_holiday
+        defaults = user_input if (user_input and errors) else (user_input if user_input else existing_holiday)
+        
+        # Build field dict, only adding defaults for optional fields if they have values
+        schema_dict = {
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("holiday_type", default=defaults.get("holiday_type", defaults.get("type", "fixed"))): vol.In(["fixed", "nth_weekday", "last_weekday"]),
+            vol.Required("month", default=defaults.get("month", 1)): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+        }
+        
+        # Add optional fields only with defaults if they have values
+        if "day" in defaults and defaults.get("day") is not None:
+            schema_dict[vol.Optional("day", default=defaults["day"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
+        else:
+            schema_dict[vol.Optional("day")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
+        
+        if "occurrence" in defaults and defaults.get("occurrence") is not None:
+            schema_dict[vol.Optional("occurrence", default=defaults["occurrence"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+        else:
+            schema_dict[vol.Optional("occurrence")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+        
+        if "weekday" in defaults and defaults.get("weekday") is not None:
+            schema_dict[vol.Optional("weekday", default=defaults["weekday"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
+        else:
+            schema_dict[vol.Optional("weekday")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
+        
+        data_schema = vol.Schema(schema_dict)
 
         return self.async_show_form(
             step_id="modify_custom_holiday_form",
@@ -898,6 +1214,19 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 holiday_key = removed.get('key', 'unknown')
                 _LOGGER.info(f"Deleting custom holiday: {holiday_name} ({holiday_key})")
                 
+                # Remove associated entities from the entity registry
+                from homeassistant.helpers import entity_registry as er
+                entity_registry = er.async_get(self.hass)
+                
+                # Find and remove the auto-created ClockworkHolidayDateSensor for this holiday
+                # Unique ID format: clockwork_{entry_id}_holiday_{holiday_key}
+                holiday_entity_unique_id = f"{DOMAIN}_{self.config_entry.entry_id}_holiday_{holiday_key}"
+                for entity_id, entity in list(entity_registry.entities.items()):
+                    if entity.config_entry_id == self.config_entry.entry_id:
+                        if entity.unique_id == holiday_entity_unique_id:
+                            _LOGGER.debug(f"Removing holiday date sensor entity: {entity_id}")
+                            entity_registry.async_remove(entity_id)
+                
                 # Remove the holiday from the list
                 custom_holidays.pop(holiday_index)
             
@@ -920,8 +1249,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
             
-            # Return to main menu
-            return await self.async_step_init()
+            # Return success message
+            return self.async_abort(reason="holiday_deleted")
         
         # Get the holiday being deleted
         custom_holidays = self.config_entry.options.get("custom_holidays", [])
@@ -980,14 +1309,16 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         user_input
                     )
 
+        # Pre-populate with user_input if available (validation error case), otherwise existing_calc
+        defaults = user_input if user_input is not None else existing_calc
         data_schema = vol.Schema({
-            vol.Required("name", default=existing_calc.get("name", "")): str,
-            vol.Required("entity_id", default=existing_calc.get("entity_id", "")): selector.EntitySelector(),
-            vol.Required("offset", default=existing_calc.get("offset", "")): str,
-            vol.Required("offset_mode", default=existing_calc.get("offset_mode", "latch")): vol.In(["pulse", "duration", "latch"]),
-            vol.Optional("pulse_duration", default=existing_calc.get("pulse_duration", "")): str,
-            vol.Required("trigger_on", default=existing_calc.get("trigger_on", "on")): vol.In(["on", "off", "both"]),
-            vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("entity_id", default=defaults.get("entity_id", "")): selector.EntitySelector(),
+            vol.Required("offset", default=defaults.get("offset", "")): str,
+            vol.Required("offset_mode", default=defaults.get("offset_mode", "latch")): vol.In(["pulse", "duration", "latch"]),
+            vol.Optional("pulse_duration", default=defaults.get("pulse_duration", "")): str,
+            vol.Required("trigger_on", default=defaults.get("trigger_on", "on")): vol.In(["on", "off", "both"]),
+            vol.Optional("icon", default=defaults.get("icon", "")): str,
         })
 
         return self.async_show_form(
@@ -1022,6 +1353,25 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 if not is_valid:
                     errors["offset"] = "invalid_offset_format"
                 else:
+                    # Validate that the entity is suitable for datetime calculations
+                    is_valid, error_msg = self._validate_datetime_entity(user_input.get("datetime_entity", ""))
+                    if not is_valid:
+                        errors["datetime_entity"] = "invalid_datetime_entity"
+                        description_placeholders = {"error": f"\n\n**Error: {error_msg}**"}
+                        data_schema = vol.Schema({
+                            vol.Required("name", default=existing_calc.get("name", "")): str,
+                            vol.Required("datetime_entity", default=existing_calc.get("datetime_entity", "")): selector.EntitySelector(
+                                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                            ),
+                            vol.Required("offset", default=existing_calc.get("offset", "")): str,
+                            vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                        })
+                        return self.async_show_form(
+                            step_id="modify_datetime_offset",
+                            data_schema=data_schema,
+                            errors=errors,
+                            description_placeholders=description_placeholders
+                        )
                     assert self._selected_calc_index is not None
                     return await self._update_calculation(
                         self._selected_calc_index,
@@ -1032,7 +1382,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("datetime_entity", default=existing_calc.get("datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Required("offset", default=existing_calc.get("offset", "")): str,
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
@@ -1067,6 +1417,48 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                # Validate that both entities are suitable for datetime calculations
+                start_valid, start_error = self._validate_datetime_entity(user_input.get("start_datetime_entity", ""))
+                end_valid, end_error = self._validate_datetime_entity(user_input.get("end_datetime_entity", ""))
+                
+                if not start_valid:
+                    errors["start_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {start_error}**"}
+                    data_schema = vol.Schema({
+                        vol.Required("name", default=existing_calc.get("name", "")): str,
+                        vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                    })
+                    return self.async_show_form(
+                        step_id="modify_date_range",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
+                if not end_valid:
+                    errors["end_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {end_error}**"}
+                    data_schema = vol.Schema({
+                        vol.Required("name", default=existing_calc.get("name", "")): str,
+                        vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                    })
+                    return self.async_show_form(
+                        step_id="modify_date_range",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
                 assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
@@ -1077,10 +1469,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })
@@ -1115,11 +1507,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     user_input
                 )
 
+        # Pre-populate with user_input if available (validation error case), otherwise existing_calc
+        defaults = user_input if user_input is not None else existing_calc
         data_schema = vol.Schema({
-            vol.Required("name", default=existing_calc.get("name", "")): str,
-            vol.Required("season", default=existing_calc.get("season", "spring")): vol.In(["spring", "summer", "autumn", "winter"]),
-            vol.Required("hemisphere", default=existing_calc.get("hemisphere", "northern")): vol.In(["northern", "southern"]),
-            vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("season", default=defaults.get("season", "spring")): vol.In(["spring", "summer", "autumn", "winter"]),
+            vol.Required("hemisphere", default=defaults.get("hemisphere", "northern")): vol.In(["northern", "southern"]),
+            vol.Optional("icon", default=defaults.get("icon", "")): str,
         })
 
         return self.async_show_form(
@@ -1152,10 +1546,12 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     user_input
                 )
 
+        # Pre-populate with user_input if available (validation error case), otherwise existing_calc
+        defaults = user_input if user_input is not None else existing_calc
         data_schema = vol.Schema({
-            vol.Required("name", default=existing_calc.get("name", "")): str,
-            vol.Required("months", default=existing_calc.get("months", "")): str,
-            vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("months", default=defaults.get("months", "")): str,
+            vol.Optional("icon", default=defaults.get("icon", "")): str,
         })
 
         return self.async_show_form(
@@ -1212,11 +1608,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             if holiday_key and holiday_key not in holidays:
                 holidays.append(holiday_key)
 
+        # Pre-populate with user_input if available (validation error case), otherwise existing_calc
+        defaults = user_input if user_input is not None else existing_calc
         data_schema = vol.Schema({
-            vol.Required("name", default=existing_calc.get("name", "")): str,
-            vol.Required("holiday", default=existing_calc.get("holiday", "")): vol.In(holidays),
-            vol.Optional("offset", default=existing_calc.get("offset", 0)): vol.Coerce(int),
-            vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("holiday", default=defaults.get("holiday", "")): vol.In(holidays),
+            vol.Optional("offset", default=defaults.get("offset", 0)): vol.Coerce(int),
+            vol.Optional("icon", default=defaults.get("icon", "")): str,
         })
 
         return self.async_show_form(
@@ -1247,6 +1645,48 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                # Validate that both entities are suitable for datetime calculations
+                start_valid, start_error = self._validate_datetime_entity(user_input.get("start_datetime_entity", ""))
+                end_valid, end_error = self._validate_datetime_entity(user_input.get("end_datetime_entity", ""))
+                
+                if not start_valid:
+                    errors["start_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {start_error}**"}
+                    data_schema = vol.Schema({
+                        vol.Required("name", default=existing_calc.get("name", "")): str,
+                        vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                    })
+                    return self.async_show_form(
+                        step_id="modify_between_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
+                if not end_valid:
+                    errors["end_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {end_error}**"}
+                    data_schema = vol.Schema({
+                        vol.Required("name", default=existing_calc.get("name", "")): str,
+                        vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                    })
+                    return self.async_show_form(
+                        step_id="modify_between_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
                 assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
@@ -1257,10 +1697,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })
@@ -1290,6 +1730,48 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                # Validate that both entities are suitable for datetime calculations
+                start_valid, start_error = self._validate_datetime_entity(user_input.get("start_datetime_entity", ""))
+                end_valid, end_error = self._validate_datetime_entity(user_input.get("end_datetime_entity", ""))
+                
+                if not start_valid:
+                    errors["start_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {start_error}**"}
+                    data_schema = vol.Schema({
+                        vol.Required("name", default=existing_calc.get("name", "")): str,
+                        vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                    })
+                    return self.async_show_form(
+                        step_id="modify_outside_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
+                if not end_valid:
+                    errors["end_datetime_entity"] = "invalid_datetime_entity"
+                    description_placeholders = {"error": f"\n\n**Error: {end_error}**"}
+                    data_schema = vol.Schema({
+                        vol.Required("name", default=existing_calc.get("name", "")): str,
+                        vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
+                            {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
+                        ),
+                        vol.Optional("icon", default=existing_calc.get("icon", "")): str,
+                    })
+                    return self.async_show_form(
+                        step_id="modify_outside_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholders
+                    )
                 assert self._selected_calc_index is not None
                 return await self._update_calculation(
                     self._selected_calc_index,
@@ -1300,10 +1782,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+                {"filter": [ {"domain": ["time", "calendar", "input_datetime"]}, {"domain": ["sensor"], "device_class": ["date", "timestamp"]} ]}
             ),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })
@@ -1345,8 +1827,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         # Reload the integration immediately to set up the new entity
         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Return to main menu
-        return await self.async_step_init()
+        # Return success message
+        return self.async_abort(reason="calculation_added")
 
     async def _update_calculation(
         self,
@@ -1381,8 +1863,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately to update the entity
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Return to main menu
-        return await self.async_step_init()
+        # Return success message
+        return self.async_abort(reason="calculation_updated")
 
     async def _update_custom_holiday(self, holiday_index: int, user_input: Dict[str, Any]):
         """Update an existing custom holiday."""
@@ -1440,8 +1922,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Return to main menu
-        return await self.async_step_init()
+        # Return success message
+        return self.async_abort(reason="holiday_updated")
 
     async def _save_custom_holiday(self, user_input: Dict[str, Any]):
         """Save a custom holiday definition."""
@@ -1492,8 +1974,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         # Reload the integration immediately
         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
         
-        # Return to main menu
-        return await self.async_step_init()
+        # Return success message
+        return self.async_abort(reason="holiday_added")
 
     async def async_step_delete_calculation(self, user_input: Optional[Dict[str, Any]] = None):
         """Select a calculation to delete."""
@@ -1580,8 +2062,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             # Reload the integration immediately
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
             
-            # Return to main menu
-            return await self.async_step_init()
+            # Return success message
+            return self.async_abort(reason="calculation_deleted")
         
         # Get the calculation being deleted
         calculations = self.config_entry.options.get(

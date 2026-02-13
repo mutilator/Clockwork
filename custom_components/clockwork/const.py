@@ -2,6 +2,7 @@
 DOMAIN = "clockwork"
 
 CONF_CALCULATIONS = "calculations"
+CONF_AUTO_CREATE_HOLIDAYS = "auto_create_holidays"
 
 # Services
 SERVICE_SCAN_AUTOMATIONS = "scan_automations"

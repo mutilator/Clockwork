@@ -1,0 +1,3 @@
+scan_automations:
+  name: Scan Automations
+  description: Scan all automations in Home Assistant for time/date patterns and identify potential Clockwork use cases

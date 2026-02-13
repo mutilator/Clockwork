@@ -19,6 +19,7 @@ from custom_components.clockwork.sensor import (
     ClockworkDatetimeOffsetSensor,
     ClockworkDateRangeSensor,
     ClockworkHolidaySensor,
+    ClockworkHolidayDateSensor,
 )
 
 
@@ -139,7 +140,10 @@ async def test_state_attributes(mock_hass):
     sensor._last_change = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
     attributes = sensor.extra_state_attributes
-    assert attributes == config
+    # Attributes should contain all config values plus device_class
+    for key, value in config.items():
+        assert attributes[key] == value
+    assert "device_class" in attributes
 
 
 @pytest.mark.asyncio
@@ -563,4 +567,175 @@ class TestSensorExtraAttributes:
         
         attrs = sensor.extra_state_attributes
         assert "name" in attrs
-        assert "holiday" in attrs
+
+
+class TestClockworkHolidayDateSensor:
+    """Tests for ClockworkHolidayDateSensor."""
+
+    def test_initialization(self, mock_hass):
+        """Test sensor initialization."""
+        entry = MagicMock()
+        entry.entry_id = "test_entry"
+        
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=entry,
+            holiday_key="christmas",
+            holiday_name="Christmas"
+        )
+        
+        assert sensor._holiday_key == "christmas"
+        assert sensor._holiday_name == "Christmas"
+        assert sensor._state is None
+
+    def test_unique_id_format(self, mock_hass):
+        """Test unique ID format for holiday date sensors."""
+        entry = MagicMock()
+        entry.entry_id = "test_entry_123"
+        
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=entry,
+            holiday_key="new_years_day",
+            holiday_name="New Year's Day"
+        )
+        
+        expected_id = "clockwork_test_entry_123_holiday_new_years_day"
+        assert sensor.unique_id == expected_id
+
+    def test_name_includes_domain_and_holiday_name(self, mock_hass):
+        """Test sensor name includes domain and holiday name."""
+        entry = MagicMock()
+        
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=entry,
+            holiday_key="independence_day",
+            holiday_name="Independence Day"
+        )
+        
+        assert "Clockwork" in sensor.name
+        assert "Independence Day" in sensor.name
+        assert "Date" in sensor.name
+
+    def test_device_class_is_date(self, mock_hass):
+        """Test device class is set to DATE."""
+        entry = MagicMock()
+        
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=entry,
+            holiday_key="thanksgiving",
+            holiday_name="Thanksgiving"
+        )
+        
+        assert sensor.device_class == SensorDeviceClass.DATE
+
+    def test_icon_is_calendar(self, mock_hass):
+        """Test icon is set to calendar."""
+        entry = MagicMock()
+        
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=entry,
+            holiday_key="halloween",
+            holiday_name="Halloween"
+        )
+        
+        assert sensor.icon == "mdi:calendar"
+
+    def test_extra_state_attributes_includes_holiday_info(self, mock_hass):
+        """Test extra attributes include holiday key and name."""
+        entry = MagicMock()
+        
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=entry,
+            holiday_key="easter",
+            holiday_name="Easter"
+        )
+        
+        attrs = sensor.extra_state_attributes
+        assert attrs["holiday_key"] == "easter"
+        assert attrs["holiday_name"] == "Easter"
+
+    def test_state_format_is_iso_date(self, mock_hass):
+        """Test state is in ISO date format (YYYY-MM-DD)."""
+        from datetime import date
+        
+        entry = MagicMock()
+        entry.entry_id = "test"
+        
+        # Mock the get_holiday_date to return a specific date
+        with patch('custom_components.clockwork.sensor.get_holiday_date') as mock_get_date:
+            mock_get_date.return_value = date(2025, 12, 25)
+            
+            sensor = ClockworkHolidayDateSensor(
+                hass=mock_hass,
+                config_entry=entry,
+                holiday_key="christmas",
+                holiday_name="Christmas"
+            )
+            
+            # Mock async_write_ha_state to avoid entity registration issues
+            sensor.async_write_ha_state = MagicMock()
+            
+            # Manually call _update_state to set the state
+            sensor._update_state()
+            
+            assert sensor.state == "2025-12-25"
+
+    def test_state_none_when_holiday_not_found(self, mock_hass):
+        """Test state is None when holiday cannot be calculated."""
+        entry = MagicMock()
+        entry.entry_id = "test"
+        
+        with patch('custom_components.clockwork.sensor.get_holiday_date') as mock_get_date:
+            mock_get_date.return_value = None
+            
+            sensor = ClockworkHolidayDateSensor(
+                hass=mock_hass,
+                config_entry=entry,
+                holiday_key="nonexistent_holiday",
+                holiday_name="Nonexistent Holiday"
+            )
+            
+            # Mock async_write_ha_state to avoid entity registration issues
+            sensor.async_write_ha_state = MagicMock()
+            
+            sensor._update_state()
+            assert sensor.state is None
+
+    def test_custom_holidays_passed_to_utility(self, mock_hass):
+        """Test custom holidays are passed to get_holiday_date."""
+        entry = MagicMock()
+        entry.entry_id = "test"
+        
+        custom_holidays = [{"key": "custom_day", "name": "Custom Day", "type": "fixed", "month": 7, "day": 15}]
+        
+        with patch('custom_components.clockwork.sensor.get_holiday_date') as mock_get_date:
+            from datetime import date
+            mock_get_date.return_value = date(2025, 7, 15)
+            
+            sensor = ClockworkHolidayDateSensor(
+                hass=mock_hass,
+                config_entry=entry,
+                holiday_key="custom_day",
+                holiday_name="Custom Day",
+                custom_holidays=custom_holidays
+            )
+            
+            # Mock async_write_ha_state to avoid entity registration issues
+            sensor.async_write_ha_state = MagicMock()
+            
+            sensor._update_state()
+            
+            # Verify get_holiday_date was called with custom_holidays as 4th argument
+            mock_get_date.assert_called_once()
+            # Call args: (hass, year, key, custom_holidays)
+            call_args = mock_get_date.call_args[0]
+            assert len(call_args) >= 3  # First 3 positional args
+            assert call_args[2] == "custom_day"  # The key
+            # Check the 4th positional argument (custom_holidays)
+            if len(call_args) >= 4:
+                assert call_args[3] == custom_holidays

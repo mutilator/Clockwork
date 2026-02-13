@@ -1,7 +1,7 @@
 """Sensor platform for Clockwork integration."""
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, date
+from typing import Any, Dict, Optional, List
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
@@ -11,8 +11,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, CONF_CALCULATIONS, CALC_TYPE_TIMESPAN, CALC_TYPE_HOLIDAY, CALC_TYPE_DATETIME_OFFSET, CALC_TYPE_DATE_RANGE
-from .utils import get_days_to_holiday, get_holidays, apply_offset_to_datetime, do_ranges_overlap
+from .const import DOMAIN, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, CALC_TYPE_TIMESPAN, CALC_TYPE_HOLIDAY, CALC_TYPE_DATETIME_OFFSET, CALC_TYPE_DATE_RANGE
+from .utils import get_days_to_holiday, get_holidays, apply_offset_to_datetime, do_ranges_overlap, parse_datetime_or_date, get_holiday_date
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +27,9 @@ async def async_setup_entry(
     calculations = config_entry.options.get(CONF_CALCULATIONS, config_entry.data.get(CONF_CALCULATIONS, []))
     # Get custom holidays from config entry options
     custom_holidays = config_entry.options.get("custom_holidays", [])
+    # Get auto-create holidays setting (defaults to True for backward compatibility)
+    auto_create_holidays = config_entry.options.get(CONF_AUTO_CREATE_HOLIDAYS, True)
+    
     entities = []
 
     for calc in calculations:
@@ -39,6 +42,26 @@ async def async_setup_entry(
             entities.append(ClockworkDateRangeSensor(calc, hass, config_entry))
         elif calc_type == CALC_TYPE_HOLIDAY:
             entities.append(ClockworkHolidaySensor(calc, hass, custom_holidays, config_entry))
+
+    # Create date sensors for holidays based on configuration
+    if auto_create_holidays:
+        # Create date sensors for all holidays (preloaded + custom)
+        all_holidays = get_holidays(hass, custom_holidays).get("holidays", [])
+    else:
+        # Only create date sensors for custom holidays
+        all_holidays = custom_holidays
+    
+    for holiday in all_holidays:
+        holiday_key = holiday.get("key")
+        holiday_name = holiday.get("name", holiday_key)
+        if holiday_key:
+            entities.append(ClockworkHolidayDateSensor(
+                hass=hass,
+                config_entry=config_entry,
+                holiday_key=holiday_key,
+                holiday_name=holiday_name,
+                custom_holidays=custom_holidays
+            ))
 
     async_add_entities(entities)
 
@@ -104,6 +127,7 @@ class ClockworkTimespanSensor(SensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         attrs = dict(self._config)
+        attrs["device_class"] = self.device_class
         # Add error info if source entity is missing
         if not self.hass.states.get(self._entity_id):
             attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
@@ -244,6 +268,7 @@ class ClockworkDateRangeSensor(SensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         attrs = dict(self._config)
+        attrs["device_class"] = self.device_class
         # Add error info if required entities are missing
         if not self.hass.states.get(self._start_datetime_entity):
             attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
@@ -280,8 +305,8 @@ class ClockworkDateRangeSensor(SensorEntity):
                 self._state = None
             else:
                 try:
-                    start_datetime = dt_util.parse_datetime(start_state.state)
-                    end_datetime = dt_util.parse_datetime(end_state.state)
+                    start_datetime = parse_datetime_or_date(start_state.state)
+                    end_datetime = parse_datetime_or_date(end_state.state)
                 except (ValueError, TypeError) as parse_err:
                     _LOGGER.error(f"Failed to parse datetime states: {parse_err}")
                     self._state = None
@@ -375,7 +400,9 @@ class ClockworkHolidaySensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        attrs["device_class"] = self.device_class
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -466,6 +493,7 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         attrs = dict(self._config)
+        attrs["device_class"] = self.device_class
         # Add error info if source entity is missing
         if not self.hass.states.get(self._datetime_entity):
             attrs["_error"] = f"Datetime entity '{self._datetime_entity}' not found. It may have been deleted or renamed."
@@ -495,7 +523,7 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
                 self._state = None
             else:
                 try:
-                    base_datetime = dt_util.parse_datetime(state.state)
+                    base_datetime = parse_datetime_or_date(state.state)
                 except (ValueError, TypeError) as parse_err:
                     _LOGGER.error(f"Failed to parse datetime from '{self._datetime_entity}': {parse_err}")
                     self._state = None
@@ -522,3 +550,112 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
         """Clean up listeners."""
         if self._remove_listener:
             self._remove_listener()
+
+
+class ClockworkHolidayDateSensor(SensorEntity):
+    """Sensor for holiday dates (automatically created for all holidays)."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        holiday_key: str,
+        holiday_name: str,
+        custom_holidays: Optional[List[Dict[str, Any]]] = None
+    ) -> None:
+        """Initialize the holiday date sensor."""
+        self.hass = hass
+        self._config_entry = config_entry
+        self._holiday_key = holiday_key
+        self._holiday_name = holiday_name
+        self._custom_holidays = custom_holidays or []
+        self._state = None
+        self._remove_timer = None
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+        return f"{DOMAIN.title()} {self._holiday_name} Date"
+
+    @property
+    def unique_id(self) -> str:
+        """Return unique ID."""
+        return f"{DOMAIN}_{self._config_entry.entry_id}_holiday_{self._holiday_key}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._config_entry.entry_id)},
+            name="Clockwork",
+            manufacturer="Clockwork",
+            model="Date/Time Calculator"
+        )
+
+    @property
+    def state(self) -> Optional[str]:
+        """Return the state of the sensor (ISO date format)."""
+        return self._state
+
+    @property
+    def device_class(self) -> str:
+        """Return the device class."""
+        return SensorDeviceClass.DATE
+
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:calendar"
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "device_class": self.device_class,
+            "holiday_key": self._holiday_key,
+            "holiday_name": self._holiday_name,
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity about to be added to hass."""
+        # Initial state
+        self._update_state()
+
+        # Update daily at midnight
+        @callback
+        def update_daily(now):
+            """Update the holiday date daily."""
+            self._update_state()
+
+        self._remove_timer = async_track_time_interval(
+            self.hass, update_daily, timedelta(days=1)
+        )
+
+    @callback
+    def _update_state(self) -> None:
+        """Update the sensor state with the holiday date for current year."""
+        try:
+            current_year = dt_util.now().year
+            holiday_date = get_holiday_date(
+                self.hass,
+                current_year,
+                self._holiday_key,
+                self._custom_holidays
+            )
+
+            if holiday_date:
+                # Return ISO date format (YYYY-MM-DD)
+                self._state = holiday_date.isoformat()
+            else:
+                _LOGGER.warning(f"Could not calculate date for holiday '{self._holiday_key}'")
+                self._state = None
+        except Exception as err:
+            _LOGGER.error(f"Error updating holiday date sensor state for '{self._holiday_key}': {err}")
+            self._state = None
+
+        self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up when entity is removed."""
+        if self._remove_timer:
+            self._remove_timer()

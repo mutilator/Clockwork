@@ -10,7 +10,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS, SERVICE_SCAN_AUTOMATIONS
+from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, SERVICE_SCAN_AUTOMATIONS
 from .diagnostics import async_get_config_entry_diagnostics
 from .utils import scan_automations_for_time_usage
 
@@ -49,22 +49,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     configured_names = {calc.get('name', '').replace(' ', '_').lower() for calc in calculations}
     _LOGGER.debug(f"Reconciliation: Configured calculation names: {configured_names}")
     
+    # Get settings for holiday sensor handling
+    auto_create_holidays = entry.options.get(CONF_AUTO_CREATE_HOLIDAYS, True)
+    custom_holidays = entry.options.get("custom_holidays", [])
+    custom_holiday_keys = {h.get("key") for h in custom_holidays if h.get("key")}
+    _LOGGER.debug(f"Reconciliation: auto_create_holidays={auto_create_holidays}, custom_holiday_keys={custom_holiday_keys}")
+    
     # Find and remove entities that don't match any configured calculation
+    # (Holiday date sensors are auto-created and should not be removed based on calculations)
     for entity_id, entity in list(entity_registry.entities.items()):
         if entity.config_entry_id == entry.entry_id:
             # Extract the calculation name from unique_id
-            # Format: domain_entry_id_calc_name
+            # Format: domain_entry_id_calc_name or domain_entry_id_holiday_key
             if entity.unique_id:
                 # Remove the domain and entry_id prefix to get just the calculation name
-                # unique_id starts with "clockwork_<entry_id>_<calc_name>"
+                # unique_id starts with "clockwork_<entry_id>_<calc_name>" or "clockwork_<entry_id>_holiday_<key>"
                 prefix = f"{DOMAIN}_{entry.entry_id}_"
                 if entity.unique_id.startswith(prefix):
-                    entity_calc_name = entity.unique_id[len(prefix):]
-                    _LOGGER.debug(f"Entity {entity_id}: unique_id={entity.unique_id}, extracted_name={entity_calc_name}, in_config={entity_calc_name in configured_names}")
+                    entity_suffix = entity.unique_id[len(prefix):]
                     
-                    # Check if this entity's calculation exists in config
-                    if entity_calc_name not in configured_names:
-                        _LOGGER.info(f"Removing orphaned entity {entity_id} (calculation '{entity_calc_name}' not in config)")
+                    # Handle auto-created holiday date sensors
+                    if entity_suffix.startswith("holiday_"):
+                        holiday_key = entity_suffix[8:]  # Remove "holiday_" prefix
+                        
+                        # If auto_create is disabled and this is NOT a custom holiday, remove it
+                        if not auto_create_holidays and holiday_key not in custom_holiday_keys:
+                            _LOGGER.info(f"Removing auto-created holiday sensor {entity_id} (auto_create_holidays is disabled)")
+                            entity_registry.async_remove(entity_id)
+                        else:
+                            _LOGGER.debug(f"Entity {entity_id}: Keeping holiday sensor (auto_create={auto_create_holidays}, is_custom={holiday_key in custom_holiday_keys})")
+                        continue
+                    
+                    # For calculation-based entities, check if the calculation exists
+                    _LOGGER.debug(f"Entity {entity_id}: unique_id={entity.unique_id}, extracted_name={entity_suffix}, in_config={entity_suffix in configured_names}")
+                    
+                    if entity_suffix not in configured_names:
+                        _LOGGER.info(f"Removing orphaned entity {entity_id} (calculation '{entity_suffix}' not in config)")
                         entity_registry.async_remove(entity_id)
                 elif entity.device_id is None:
                     # Also remove entities without device_id (from previous versions)

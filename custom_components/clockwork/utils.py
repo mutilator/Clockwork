@@ -6,9 +6,44 @@ from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+from homeassistant.util import dt as dt_util
+
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def parse_datetime_or_date(value: str) -> Optional[datetime]:
+    """Parse a datetime or date string, treating date-only as midnight.
+    
+    Handles both:
+    - Full datetime: "2025-11-15T00:00:00" or "2025-11-15T12:30:45+02:00"
+    - Date only: "2025-12-30" (treated as "2025-12-30T00:00:00")
+    
+    Args:
+        value: String representation of datetime or date
+    
+    Returns:
+        datetime object with time set to 00:00:00 if input is date-only, or None if parsing fails
+    """
+    if not value:
+        return None
+    
+    # First try to parse as a full datetime
+    dt = dt_util.parse_datetime(value)
+    if dt is not None:
+        return dt
+    
+    # If that fails, try to parse as a date and convert to datetime at midnight
+    try:
+        # Try parsing as ISO date format (YYYY-MM-DD)
+        parsed_date = datetime.strptime(value.strip(), "%Y-%m-%d").date()
+        # Convert to datetime at midnight
+        return datetime.combine(parsed_date, datetime.min.time())
+    except (ValueError, TypeError):
+        _LOGGER.debug(f"Could not parse datetime or date from: {value}")
+        return None
+
 
 
 def get_holidays(hass: "HomeAssistant", custom_holidays: Optional[List[Dict]] = None) -> Dict:
@@ -23,6 +58,7 @@ def get_holidays(hass: "HomeAssistant", custom_holidays: Optional[List[Dict]] = 
     """
     # Get cached holidays from hass.data (loaded at integration setup)
     holidays_data = hass.data[DOMAIN].get("holidays", {"holidays": []})
+
     
     # Create a copy to avoid modifying cache
     result = holidays_data.copy()

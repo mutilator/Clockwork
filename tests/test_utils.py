@@ -9,6 +9,7 @@ from custom_components.clockwork.utils import (
     validate_offset_string,
     is_datetime_between,
     scan_automations_for_time_usage,
+    parse_datetime_or_date,
 )
 
 
@@ -656,3 +657,90 @@ class TestValidateOffsetString:
         is_valid, error = validate_offset_string("abc minutes")
         assert is_valid is False
         assert error is not None
+
+
+class TestParseDatetimeOrDate:
+    """Test parse_datetime_or_date function."""
+
+    def test_parse_full_datetime_iso_format(self):
+        """Test parsing full ISO datetime format."""
+        result = parse_datetime_or_date("2025-11-15T00:00:00")
+        assert result is not None
+        assert result.year == 2025
+        assert result.month == 11
+        assert result.day == 15
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+
+    def test_parse_full_datetime_with_time(self):
+        """Test parsing full datetime with non-zero time."""
+        result = parse_datetime_or_date("2025-11-15T14:30:45")
+        assert result is not None
+        assert result.year == 2025
+        assert result.month == 11
+        assert result.day == 15
+        assert result.hour == 14
+        assert result.minute == 30
+        assert result.second == 45
+
+    def test_parse_datetime_with_timezone(self):
+        """Test parsing datetime with timezone."""
+        result = parse_datetime_or_date("2025-11-15T12:30:45+02:00")
+        assert result is not None
+        assert result.year == 2025
+        assert result.month == 11
+        assert result.day == 15
+
+    def test_parse_date_only_as_midnight(self):
+        """Test parsing date-only string, should return midnight."""
+        result = parse_datetime_or_date("2025-12-30")
+        assert result is not None
+        assert result.year == 2025
+        assert result.month == 12
+        assert result.day == 30
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+
+    def test_parse_date_only_converts_to_datetime(self):
+        """Test that date-only strings are converted to datetime objects."""
+        result = parse_datetime_or_date("2025-12-30")
+        assert isinstance(result, datetime)
+
+    def test_parse_none_input_returns_none(self):
+        """Test parsing None input returns None."""
+        result = parse_datetime_or_date(None)
+        assert result is None
+
+    def test_parse_empty_string_returns_none(self):
+        """Test parsing empty string returns None."""
+        result = parse_datetime_or_date("")
+        assert result is None
+
+    def test_parse_invalid_format_returns_none(self):
+        """Test parsing invalid format returns None."""
+        result = parse_datetime_or_date("not-a-date")
+        assert result is None
+
+    def test_parse_date_november_15(self):
+        """Test parsing start date from user example."""
+        result = parse_datetime_or_date("2025-11-15T00:00:00")
+        assert result is not None
+        assert result == datetime(2025, 11, 15, 0, 0, 0)
+
+    def test_parse_date_december_30(self):
+        """Test parsing end date (date-only) from user example."""
+        result = parse_datetime_or_date("2025-12-30")
+        assert result is not None
+        assert result == datetime(2025, 12, 30, 0, 0, 0)
+
+    def test_parse_both_example_dates_compatible(self):
+        """Test that both user example dates can be parsed and compared."""
+        start = parse_datetime_or_date("2025-11-15T00:00:00")
+        end = parse_datetime_or_date("2025-12-30")
+        assert start is not None
+        assert end is not None
+        # End should be after start
+        assert end > start
+

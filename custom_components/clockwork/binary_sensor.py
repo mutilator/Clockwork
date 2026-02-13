@@ -12,7 +12,7 @@ from homeassistant.helpers.event import async_track_state_change_event, async_tr
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, CONF_CALCULATIONS, CALC_TYPE_OFFSET, CALC_TYPE_SEASON, CALC_TYPE_MONTH, CALC_TYPE_BETWEEN_DATES, CALC_TYPE_OUTSIDE_DATES
-from .utils import is_in_season, parse_offset, is_datetime_between
+from .utils import is_in_season, parse_offset, is_datetime_between, parse_datetime_or_date
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -460,8 +460,8 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
                 self._is_on = False
             else:
                 try:
-                    start_datetime = dt_util.parse_datetime(start_state.state)
-                    end_datetime = dt_util.parse_datetime(end_state.state)
+                    start_datetime = parse_datetime_or_date(start_state.state)
+                    end_datetime = parse_datetime_or_date(end_state.state)
                 except (ValueError, TypeError) as parse_err:
                     _LOGGER.error(f"Between Dates '{self.name}' - Failed to parse datetime states: {parse_err}")
                     self._is_on = False
@@ -595,8 +595,8 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
                 self._is_on = False
             else:
                 try:
-                    start_datetime = dt_util.parse_datetime(start_state.state)
-                    end_datetime = dt_util.parse_datetime(end_state.state)
+                    start_datetime = parse_datetime_or_date(start_state.state)
+                    end_datetime = parse_datetime_or_date(end_state.state)
                 except (ValueError, TypeError) as parse_err:
                     _LOGGER.error(f"Outside Dates '{self.name}' - Failed to parse datetime states: {parse_err}")
                     self._is_on = False

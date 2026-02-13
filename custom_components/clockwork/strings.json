@@ -9,34 +9,9 @@
         }
       }
     },
-    "error": {
-      "invalid_calculation": "Invalid calculation configuration",
-      "invalid_offset_format": "Invalid offset format (e.g., '1 hour', '30 minutes')",
-      "invalid_season": "Invalid season selection",
-      "invalid_fixed_date": "Invalid fixed date format",
-      "invalid_nth_weekday": "Invalid nth weekday selection",
-      "invalid_last_weekday": "Invalid last weekday selection",
-      "invalid_number_format": "Invalid number format",
-      "entity_not_found": "Referenced entity not found. It may have been deleted or renamed.",
-      "missing_name": "Calculation name is required",
-      "missing_entity_id": "Entity to monitor is required",
-      "missing_offset": "Offset is required",
-      "missing_offset_mode": "Offset mode is required",
-      "missing_pulse_duration": "Pulse duration is required for pulse mode",
-      "missing_trigger_on": "Trigger event selection is required",
-      "missing_start_entity": "Start datetime entity is required",
-      "missing_end_entity": "End datetime entity is required",
-      "missing_season": "Season is required",
-      "missing_months": "Months are required",
-      "missing_holiday": "Holiday is required",
-      "missing_holiday_type": "Holiday type is required",
-      "interval_positive": "Update interval must be greater than 0"
-    },
+    "error": {},
     "abort": {
-      "already_configured": "Clockwork is already configured",
-      "no_calculations": "No calculations to delete",
-      "no_custom_holidays": "No custom holidays to modify or delete",
-      "unsupported_calculation_type": "Unsupported calculation type"
+      "already_configured": "Clockwork is already configured"
     }
   },
   "options": {
@@ -51,6 +26,7 @@
           "custom_holiday": "Add Custom Holiday",
           "modify_custom_holiday": "Modify Custom Holiday",
           "delete_custom_holiday": "Delete Custom Holiday",
+          "settings": "Settings",
           "scan_automations": "Scan Automations for Time Patterns"
         }
       },
@@ -104,7 +80,7 @@
       },
       "datetime_offset": {
         "title": "Datetime Offset",
-        "description": "Apply time offset to a datetime entity/helper",
+        "description": "Apply time offset to a datetime entity/helper{error}",
         "data": {
           "name": "Calculation Name",
           "datetime_entity": "Datetime Entity",
@@ -114,7 +90,7 @@
       },
       "date_range": {
         "title": "Date Range Duration",
-        "description": "Measure duration between two datetime entities",
+        "description": "Measure duration between two datetime entities{error}",
         "data": {
           "name": "Calculation Name",
           "start_datetime_entity": "Start Datetime Entity",
@@ -161,7 +137,7 @@
       },
       "between_dates": {
         "title": "Between Dates Check",
-        "description": "Binary sensor true when current time is between two datetimes",
+        "description": "Check if current time is within a date/time range{error}",
         "data": {
           "name": "Calculation Name",
           "start_datetime_entity": "Start Datetime Entity",
@@ -171,7 +147,7 @@
       },
       "outside_dates": {
         "title": "Outside Dates Check",
-        "description": "Binary sensor true when current time is OUTSIDE a date range",
+        "description": "Check if current time is outside a date/time range{error}",
         "data": {
           "name": "Calculation Name",
           "start_datetime_entity": "Start Datetime Entity",
@@ -349,10 +325,56 @@
           "icon": "Icon (optional)"
         }
       },
+      "settings": {
+        "title": "Settings",
+        "description": "Configure integration settings",
+        "data": {
+          "auto_create_holidays": "Auto-create built-in holiday sensors"
+        },
+        "data_description": {
+          "auto_create_holidays": "When enabled, sensors will be automatically created for all built-in US holidays. When disabled, only custom holidays will create sensors."
+        }
+      },
       "scan_automations": {
         "title": "Automation Scanner",
         "description": "{results}"
       }
+    },
+    "error": {
+      "invalid_calculation": "Invalid calculation configuration",
+      "invalid_offset_format": "Invalid offset format (e.g., '1 hour', '30 minutes')",
+      "invalid_datetime_entity": "Entity is not a valid datetime entity. Use time, calendar, input_datetime entities, or sensor entities with date/timestamp device_class.",
+      "invalid_season": "Invalid season selection",
+      "invalid_fixed_date": "Invalid fixed date format",
+      "invalid_nth_weekday": "Invalid nth weekday selection",
+      "invalid_last_weekday": "Invalid last weekday selection",
+      "invalid_number_format": "Invalid number format",
+      "entity_not_found": "Referenced entity not found. It may have been deleted or renamed.",
+      "missing_name": "Calculation name is required",
+      "missing_entity_id": "Entity to monitor is required",
+      "missing_offset": "Offset is required",
+      "missing_offset_mode": "Offset mode is required",
+      "missing_pulse_duration": "Pulse duration is required for pulse mode",
+      "missing_trigger_on": "Trigger event selection is required",
+      "missing_start_entity": "Start datetime entity is required",
+      "missing_end_entity": "End datetime entity is required",
+      "missing_season": "Season is required",
+      "missing_months": "Months are required",
+      "missing_holiday": "Holiday is required",
+      "missing_holiday_type": "Holiday type is required",
+      "interval_positive": "Update interval must be greater than 0"
+    },
+    "abort": {
+      "no_calculations": "No calculations to delete",
+      "no_custom_holidays": "No custom holidays to modify or delete",
+      "unsupported_calculation_type": "Unsupported calculation type",
+      "settings_updated": "Settings have been updated and will be applied.",
+      "calculation_added": "Calculation has been added successfully.",
+      "calculation_updated": "Calculation has been updated successfully.",
+      "calculation_deleted": "Calculation has been deleted successfully.",
+      "holiday_added": "Custom holiday has been added successfully.",
+      "holiday_updated": "Custom holiday has been updated successfully.",
+      "holiday_deleted": "Custom holiday has been deleted successfully."
     }
   }
 }
