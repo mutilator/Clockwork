@@ -21,6 +21,23 @@
 - **Flexible Triggering**: Control which state changes trigger offset calculations
 - **Timezone Aware**: Automatic timezone handling for datetime comparisons
 
+## Documentation & Examples
+
+For detailed guides and examples for each calculation type, visit the **[Clockwork Wiki](https://github.com/mutilator/clockwork/wiki)**:
+
+| Topic | Link |
+|-------|------|
+| Getting Started | [Home](https://github.com/mutilator/clockwork/wiki/Home) |
+| Timespan Calculation | [Calculate duration since state change](https://github.com/mutilator/clockwork/wiki/Timespan-Calculation) |
+| Offset Calculation | [Time-delayed triggers](https://github.com/mutilator/clockwork/wiki/Offset-Calculation) |
+| Datetime Offset | [Apply time offsets to datetime entities](https://github.com/mutilator/clockwork/wiki/Datetime-Offset) |
+| Date Range Duration | [Measure duration between dates](https://github.com/mutilator/clockwork/wiki/Date-Range-Duration) |
+| Season Detection | [Detect current season automatically](https://github.com/mutilator/clockwork/wiki/Season-Detection) |
+| Month Detection | [Check if current date is in specified months](https://github.com/mutilator/clockwork/wiki/Month-Detection) |
+| Holiday Countdown | [Days until next holiday](https://github.com/mutilator/clockwork/wiki/Holiday-Countdown) |
+| Custom Holidays | [Define your own holidays](https://github.com/mutilator/clockwork/wiki/Custom-Holidays) |
+| Between/Outside Dates | [Date range checks](https://github.com/mutilator/clockwork/wiki/Between-Dates-Check) |
+
 ## Screenshots
 
 ### Sensor Types Created
@@ -82,23 +99,6 @@ All configuration is done through the Home Assistant UI. No YAML editing require
 - **Holiday Countdown** - Days until US holidays or custom dates
 - **Between Dates** - True when current time is within range
 - **Outside Dates** - True when current time is outside range
-
-## Documentation
-
-Comprehensive documentation with examples and use cases is available in the [GitHub Wiki](https://github.com/mutilator/clockwork/wiki):
-
-- [Getting Started Guide](https://github.com/mutilator/clockwork/wiki/Home)
-- [Timespan Calculation](https://github.com/mutilator/clockwork/wiki/Timespan-Calculation)
-- [Offset Calculation](https://github.com/mutilator/clockwork/wiki/Offset-Calculation)
-- [Datetime Offset](https://github.com/mutilator/clockwork/wiki/Datetime-Offset)
-- [Date Range Duration](https://github.com/mutilator/clockwork/wiki/Date-Range-Duration)
-- [Season Detection](https://github.com/mutilator/clockwork/wiki/Season-Detection)
-- [Month Detection](https://github.com/mutilator/clockwork/wiki/Month-Detection)
-- [Holiday Countdown](https://github.com/mutilator/clockwork/wiki/Holiday-Countdown)
-- [Custom Holidays](https://github.com/mutilator/clockwork/wiki/Custom-Holidays)
-- [Between/Outside Dates](https://github.com/mutilator/clockwork/wiki/Between-Dates-Check)
-
-Each wiki page includes detailed configuration instructions, real-world examples, and automation templates.
 
 ## Quick Example
 
