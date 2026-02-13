@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -91,9 +91,23 @@ class ClockworkTimespanSensor(SensorEntity):
         return "seconds"
 
     @property
+    def device_class(self) -> str:
+        """Return the device class."""
+        return SensorDeviceClass.DURATION
+
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:timer-outline"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        # Add error info if source entity is missing
+        if not self.hass.states.get(self._entity_id):
+            attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -155,8 +169,12 @@ class ClockworkTimespanSensor(SensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         if self._last_change:
-            delta = dt_util.utcnow() - self._last_change
-            self._state = int(delta.total_seconds())
+            try:
+                delta = dt_util.utcnow() - self._last_change
+                self._state = int(delta.total_seconds())
+            except (ValueError, TypeError) as err:
+                _LOGGER.error(f"Error calculating timespan from {self._last_change}: {err}")
+                self._state = 0
         else:
             self._state = 0
         self.async_write_ha_state()
@@ -213,9 +231,25 @@ class ClockworkDateRangeSensor(SensorEntity):
         return "hours"
 
     @property
+    def device_class(self) -> str:
+        """Return the device class."""
+        return SensorDeviceClass.DURATION
+
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:timer-outline"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        # Add error info if required entities are missing
+        if not self.hass.states.get(self._start_datetime_entity):
+            attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
+        elif not self.hass.states.get(self._end_datetime_entity):
+            attrs["_error"] = f"End datetime entity '{self._end_datetime_entity}' not found. It may have been deleted or renamed."
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -238,9 +272,21 @@ class ClockworkDateRangeSensor(SensorEntity):
             start_state = self.hass.states.get(self._start_datetime_entity)
             end_state = self.hass.states.get(self._end_datetime_entity)
 
-            if start_state and end_state:
-                start_datetime = dt_util.parse_datetime(start_state.state)
-                end_datetime = dt_util.parse_datetime(end_state.state)
+            if not start_state:
+                _LOGGER.warning(f"Start datetime entity '{self._start_datetime_entity}' not found")
+                self._state = None
+            elif not end_state:
+                _LOGGER.warning(f"End datetime entity '{self._end_datetime_entity}' not found")
+                self._state = None
+            else:
+                try:
+                    start_datetime = dt_util.parse_datetime(start_state.state)
+                    end_datetime = dt_util.parse_datetime(end_state.state)
+                except (ValueError, TypeError) as parse_err:
+                    _LOGGER.error(f"Failed to parse datetime states: {parse_err}")
+                    self._state = None
+                    self.async_write_ha_state()
+                    return
                 
                 if start_datetime and end_datetime:
                     current_tz = dt_util.now().tzinfo
@@ -256,9 +302,8 @@ class ClockworkDateRangeSensor(SensorEntity):
                     self._state = int(delta.total_seconds() / 3600)
                 else:
                     self._state = None
-            else:
-                self._state = None
-        except (ValueError, TypeError):
+        except Exception as err:
+            _LOGGER.error(f"Error updating date range sensor state: {err}")
             self._state = None
         
         self.async_write_ha_state()
@@ -318,6 +363,16 @@ class ClockworkHolidaySensor(SensorEntity):
         return "days"
 
     @property
+    def device_class(self) -> str:
+        """Return the device class."""
+        return SensorDeviceClass.DURATION
+
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:calendar-star"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         return self._config
@@ -338,12 +393,17 @@ class ClockworkHolidaySensor(SensorEntity):
     @callback
     def _update_state(self) -> None:
         """Update the sensor state."""
-        now = dt_util.now().date()
-        days_to_holiday = get_days_to_holiday(self.hass, now, self._holiday_key, self._custom_holidays)
-        
-        if days_to_holiday >= 0:
-            self._state = days_to_holiday + self._offset_days
-        else:
+        try:
+            now = dt_util.now().date()
+            days_to_holiday = get_days_to_holiday(self.hass, now, self._holiday_key, self._custom_holidays)
+            
+            if days_to_holiday >= 0:
+                self._state = days_to_holiday + self._offset_days
+            else:
+                _LOGGER.warning(f"Holiday '{self._holiday_key}' not found or invalid")
+                self._state = None
+        except Exception as err:
+            _LOGGER.error(f"Error updating holiday sensor state for '{self._holiday_key}': {err}")
             self._state = None
         
         self.async_write_ha_state()
@@ -388,6 +448,16 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
         )
 
     @property
+    def device_class(self) -> str:
+        """Return the device class."""
+        return SensorDeviceClass.TIMESTAMP
+
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:calendar-clock"
+
+    @property
     def state(self) -> Optional[str]:
         """Return the state of the sensor."""
         return self._state
@@ -395,7 +465,11 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        # Add error info if source entity is missing
+        if not self.hass.states.get(self._datetime_entity):
+            attrs["_error"] = f"Datetime entity '{self._datetime_entity}' not found. It may have been deleted or renamed."
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -416,16 +490,30 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
         """Update the sensor state."""
         try:
             state = self.hass.states.get(self._datetime_entity)
-            if state:
-                base_datetime = dt_util.parse_datetime(state.state)
+            if not state:
+                _LOGGER.warning(f"Datetime entity '{self._datetime_entity}' not found")
+                self._state = None
+            else:
+                try:
+                    base_datetime = dt_util.parse_datetime(state.state)
+                except (ValueError, TypeError) as parse_err:
+                    _LOGGER.error(f"Failed to parse datetime from '{self._datetime_entity}': {parse_err}")
+                    self._state = None
+                    self.async_write_ha_state()
+                    return
+                
                 if base_datetime:
                     result_datetime = apply_offset_to_datetime(base_datetime, self._offset_str)
-                    self._state = result_datetime.isoformat()
+                    if result_datetime:
+                        self._state = result_datetime.isoformat()
+                    else:
+                        _LOGGER.warning(f"Failed to apply offset '{self._offset_str}' to datetime")
+                        self._state = None
                 else:
+                    _LOGGER.warning(f"Invalid state value '{state.state}' from entity '{self._datetime_entity}'")
                     self._state = None
-            else:
-                self._state = None
-        except (ValueError, TypeError):
+        except Exception as err:
+            _LOGGER.error(f"Error updating datetime offset sensor state: {err}")
             self._state = None
 
         self.async_write_ha_state()

@@ -91,9 +91,18 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
         return self._is_on
 
     @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:alarm" if self._is_on else "mdi:alarm-off"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        # Add error info if source entity is missing
+        if not self.hass.states.get(self._entity_id):
+            attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -140,41 +149,45 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
     @callback
     def _update_state(self) -> None:
         """Update the sensor state based on mode."""
-        now = dt_util.utcnow()
-        
-        if self._mode == "pulse":
-            # Pulse mode: ON for pulse_duration seconds after trigger, then OFF
-            if self._trigger_time:
-                pulse_end_time = self._trigger_time + timedelta(seconds=self._pulse_duration_seconds)
-                self._is_on = self._trigger_time <= now < pulse_end_time
-                # Clear trigger after pulse ends
-                if now >= pulse_end_time:
-                    self._trigger_time = None
-            else:
-                self._is_on = False
-        
-        elif self._mode == "duration":
-            # Duration mode: ON when offset reached after trigger event
-            # Stays ON while the source state matches trigger condition
-            if self._trigger_time and now >= self._trigger_time:
-                # Check if we should stay on based on trigger_on and current state
-                if self._trigger_on == "on" and self._source_is_on:
-                    self._is_on = True
-                elif self._trigger_on == "off" and not self._source_is_on:
-                    self._is_on = True
-                elif self._trigger_on == "both":
+        try:
+            now = dt_util.utcnow()
+            
+            if self._mode == "pulse":
+                # Pulse mode: ON for pulse_duration seconds after trigger, then OFF
+                if self._trigger_time:
+                    pulse_end_time = self._trigger_time + timedelta(seconds=self._pulse_duration_seconds)
+                    self._is_on = self._trigger_time <= now < pulse_end_time
+                    # Clear trigger after pulse ends
+                    if now >= pulse_end_time:
+                        self._trigger_time = None
+                else:
+                    self._is_on = False
+            
+            elif self._mode == "duration":
+                # Duration mode: ON when offset reached after trigger event
+                # Stays ON while the source state matches trigger condition
+                if self._trigger_time and now >= self._trigger_time:
+                    # Check if we should stay on based on trigger_on and current state
+                    if self._trigger_on == "on" and self._source_is_on:
+                        self._is_on = True
+                    elif self._trigger_on == "off" and not self._source_is_on:
+                        self._is_on = True
+                    elif self._trigger_on == "both":
+                        self._is_on = True
+                    else:
+                        self._is_on = False
+                else:
+                    self._is_on = False
+            
+            else:  # latch mode (default)
+                # Latch mode: ON when offset reached after trigger event, stays ON indefinitely
+                if self._trigger_time and now >= self._trigger_time:
                     self._is_on = True
                 else:
                     self._is_on = False
-            else:
-                self._is_on = False
-        
-        else:  # latch mode (default)
-            # Latch mode: ON when offset reached after trigger event, stays ON indefinitely
-            if self._trigger_time and now >= self._trigger_time:
-                self._is_on = True
-            else:
-                self._is_on = False
+        except (ValueError, TypeError, AttributeError) as err:
+            _LOGGER.error(f"Error updating offset binary sensor state: {err}")
+            self._is_on = False
         
         self.async_write_ha_state()
 
@@ -223,6 +236,18 @@ class ClockworkSeasonBinarySensor(BinarySensorEntity):
         return self._is_on
 
     @property
+    def icon(self) -> str:
+        """Return the icon."""
+        seasons_icons = {
+            "spring": "mdi:flower",
+            "summer": "mdi:sun",
+            "autumn": "mdi:leaf",
+            "fall": "mdi:leaf",
+            "winter": "mdi:snowflake",
+        }
+        return seasons_icons.get(self._season, "mdi:calendar-today")
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         return self._config
@@ -243,8 +268,13 @@ class ClockworkSeasonBinarySensor(BinarySensorEntity):
     @callback
     def _update_state(self) -> None:
         """Update the sensor state."""
-        now = dt_util.now().date()
-        self._is_on = is_in_season(self.hass, now, self._season, self._hemisphere)
+        try:
+            now = dt_util.now().date()
+            self._is_on = is_in_season(self.hass, now, self._season, self._hemisphere)
+        except Exception as err:
+            _LOGGER.error(f"Error updating season binary sensor state for '{self._season}': {err}")
+            self._is_on = False
+        
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -290,6 +320,11 @@ class ClockworkMonthBinarySensor(BinarySensorEntity):
         return self._is_on
 
     @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:calendar-check" if self._is_on else "mdi:calendar-blank"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         return self._config
@@ -310,8 +345,17 @@ class ClockworkMonthBinarySensor(BinarySensorEntity):
     @callback
     def _update_state(self) -> None:
         """Update the sensor state."""
-        now = dt_util.now()
-        self._is_on = now.month in self._months
+        try:
+            if not self._months:
+                _LOGGER.warning("No months configured for month binary sensor")
+                self._is_on = False
+            else:
+                now = dt_util.now()
+                self._is_on = now.month in self._months
+        except (ValueError, TypeError, AttributeError) as err:
+            _LOGGER.error(f"Error updating month binary sensor state: {err}")
+            self._is_on = False
+        
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -359,9 +403,20 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
         return self._is_on
 
     @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:calendar-clock" if self._is_on else "mdi:calendar-outline"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        # Add error info if required entities are missing
+        if not self.hass.states.get(self._start_datetime_entity):
+            attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
+        elif not self.hass.states.get(self._end_datetime_entity):
+            attrs["_error"] = f"End datetime entity '{self._end_datetime_entity}' not found. It may have been deleted or renamed."
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -396,9 +451,21 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
             _LOGGER.debug(f"Between Dates '{self.name}' - Start entity state: {start_state}")
             _LOGGER.debug(f"Between Dates '{self.name}' - End entity state: {end_state}")
 
-            if start_state and end_state:
-                start_datetime = dt_util.parse_datetime(start_state.state)
-                end_datetime = dt_util.parse_datetime(end_state.state)
+            if not start_state:
+                _LOGGER.warning(f"Between Dates '{self.name}' - Start datetime entity '{self._start_datetime_entity}' not found")
+                self._is_on = False
+            elif not end_state:
+                _LOGGER.warning(f"Between Dates '{self.name}' - End datetime entity '{self._end_datetime_entity}' not found")
+                self._is_on = False
+            else:
+                try:
+                    start_datetime = dt_util.parse_datetime(start_state.state)
+                    end_datetime = dt_util.parse_datetime(end_state.state)
+                except (ValueError, TypeError) as parse_err:
+                    _LOGGER.error(f"Between Dates '{self.name}' - Failed to parse datetime states: {parse_err}")
+                    self._is_on = False
+                    self.async_write_ha_state()
+                    return
                 
                 _LOGGER.debug(f"Between Dates '{self.name}' - Parsed start_datetime: {start_datetime}")
                 _LOGGER.debug(f"Between Dates '{self.name}' - Parsed end_datetime: {end_datetime}")
@@ -418,13 +485,10 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
                     self._is_on = is_datetime_between(current_datetime, start_datetime, end_datetime)
                     _LOGGER.debug(f"Between Dates '{self.name}' - Result: {self._is_on}")
                 else:
-                    _LOGGER.debug(f"Between Dates '{self.name}' - Failed to parse datetimes")
+                    _LOGGER.warning(f"Between Dates '{self.name}' - Failed to parse datetimes: start={start_datetime}, end={end_datetime}")
                     self._is_on = False
-            else:
-                _LOGGER.debug(f"Between Dates '{self.name}' - Missing entity states")
-                self._is_on = False
-        except (ValueError, TypeError) as e:
-            _LOGGER.error(f"Between Dates '{self.name}' - Error: {e}")
+        except (AttributeError, RuntimeError) as err:
+            _LOGGER.error(f"Between Dates '{self.name}' - Unexpected error: {err}")
             self._is_on = False
         
         self.async_write_ha_state()
@@ -477,9 +541,20 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
         return self._is_on
 
     @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:calendar-remove" if self._is_on else "mdi:calendar"
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
-        return self._config
+        attrs = dict(self._config)
+        # Add error info if required entities are missing
+        if not self.hass.states.get(self._start_datetime_entity):
+            attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
+        elif not self.hass.states.get(self._end_datetime_entity):
+            attrs["_error"] = f"End datetime entity '{self._end_datetime_entity}' not found. It may have been deleted or renamed."
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -511,9 +586,21 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
             start_state = self.hass.states.get(self._start_datetime_entity)
             end_state = self.hass.states.get(self._end_datetime_entity)
 
-            if start_state and end_state:
-                start_datetime = dt_util.parse_datetime(start_state.state)
-                end_datetime = dt_util.parse_datetime(end_state.state)
+            if not start_state:
+                _LOGGER.warning(f"Outside Dates '{self.name}' - Start datetime entity '{self._start_datetime_entity}' not found")
+                self._is_on = False
+            elif not end_state:
+                _LOGGER.warning(f"Outside Dates '{self.name}' - End datetime entity '{self._end_datetime_entity}' not found")
+                self._is_on = False
+            else:
+                try:
+                    start_datetime = dt_util.parse_datetime(start_state.state)
+                    end_datetime = dt_util.parse_datetime(end_state.state)
+                except (ValueError, TypeError) as parse_err:
+                    _LOGGER.error(f"Outside Dates '{self.name}' - Failed to parse datetime states: {parse_err}")
+                    self._is_on = False
+                    self.async_write_ha_state()
+                    return
                 
                 if start_datetime and end_datetime:
                     current_datetime = dt_util.now()
@@ -527,10 +614,10 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
                     # True if OUTSIDE the range (not between)
                     self._is_on = not is_datetime_between(current_datetime, start_datetime, end_datetime)
                 else:
+                    _LOGGER.warning(f"Outside Dates '{self.name}' - Failed to parse datetimes: start={start_datetime}, end={end_datetime}")
                     self._is_on = False
-            else:
-                self._is_on = False
-        except (ValueError, TypeError):
+        except (AttributeError, RuntimeError) as err:
+            _LOGGER.error(f"Outside Dates '{self.name}' - Unexpected error: {err}")
             self._is_on = False
         
         self.async_write_ha_state()

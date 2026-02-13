@@ -1,4 +1,5 @@
 """Utility functions for Clockwork date and time calculations."""
+import logging
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -6,6 +7,8 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def get_holidays(hass: "HomeAssistant", custom_holidays: Optional[List[Dict]] = None) -> Dict:
@@ -203,16 +206,17 @@ def parse_offset(offset_str: str) -> int:
         offset_str: Offset string (e.g., '1 hour', '30 minutes', '2 days')
     
     Returns:
-        Offset in seconds
+        Offset in seconds, or 0 if parsing fails
     """
     if not offset_str:
         return 0
     
-    parts = str(offset_str).strip().split()
-    if len(parts) < 2:
-        return 0
-    
     try:
+        parts = str(offset_str).strip().split()
+        if len(parts) < 2:
+            _LOGGER.warning(f"Invalid offset format '{offset_str}': expected 'value unit' format")
+            return 0
+        
         value = int(parts[0])
         unit = parts[1].lower().rstrip('s')
         
@@ -224,8 +228,13 @@ def parse_offset(offset_str: str) -> int:
             "week": 604800,
         }
         
-        return value * conversions.get(unit, 0)
-    except (ValueError, IndexError):
+        if unit not in conversions:
+            _LOGGER.warning(f"Unknown time unit '{unit}' in offset string '{offset_str}'. Valid units: second, minute, hour, day, week")
+            return 0
+        
+        return value * conversions[unit]
+    except (ValueError, IndexError, AttributeError, TypeError) as err:
+        _LOGGER.error(f"Error parsing offset '{offset_str}': {err}")
         return 0
 
 
@@ -241,25 +250,37 @@ def validate_offset_string(offset_str: str) -> Tuple[bool, Optional[str]]:
     if not offset_str or not isinstance(offset_str, str):
         return False, "Offset is required"
     
-    offset_str = str(offset_str).strip()
-    parts = offset_str.split()
-    
-    if len(parts) < 2:
-        return False, "Format must be like '1 hour' or '30 minutes'"
-    
     try:
-        value = int(parts[0])
+        offset_str = str(offset_str).strip()
+        if not offset_str:
+            return False, "Offset cannot be empty"
+        
+        parts = offset_str.split()
+        
+        if len(parts) < 2:
+            return False, "Format must be like '1 hour' or '30 minutes' (e.g., '-2 days', '1 hour')"
+        
+        if len(parts) > 2:
+            return False, "Offset must contain only value and unit (e.g., '1 hour'), not extra words"
+        
+        try:
+            value = int(parts[0])
+        except ValueError:
+            return False, f"Offset value must be an integer, got '{parts[0]}'"
+        
         if value == 0:
-            return False, "Offset value must be greater than 0"
+            return False, "Offset value must be non-zero (greater or less than 0)"
+        
         unit = parts[1].lower().rstrip('s')
         
         valid_units = ["second", "minute", "hour", "day", "week"]
         if unit not in valid_units:
-            return False, f"Invalid unit '{parts[1]}'. Valid units are: {', '.join(valid_units)}"
+            return False, f"Invalid time unit '{parts[1]}'. Valid units are: {', '.join(valid_units)}"
         
         return True, None
-    except (ValueError, IndexError):
-        return False, "Format must be like '1 hour' or '30 minutes'"
+    except (AttributeError, TypeError) as err:
+        _LOGGER.error(f"Error validating offset string: {err}")
+        return False, f"Invalid offset format: {err}"
 
 
 def is_datetime_between(check_datetime: datetime, start_datetime: datetime, end_datetime: datetime) -> bool:
@@ -277,41 +298,49 @@ def is_datetime_between(check_datetime: datetime, start_datetime: datetime, end_
     
     Returns:
         True if check_datetime is between start and end (inclusive)
+    
+    Raises:
+        ValueError: If any datetime argument is None
     """
-    import logging
-    _LOGGER = logging.getLogger(__name__)
+    if check_datetime is None or start_datetime is None or end_datetime is None:
+        _LOGGER.error(f"is_datetime_between called with None values: check={check_datetime}, start={start_datetime}, end={end_datetime}")
+        raise ValueError("All datetime arguments must be provided (not None)")
     
-    # If start and end are on the same date
-    if start_datetime.date() == end_datetime.date():
-        _LOGGER.debug(f"is_datetime_between: Start and end on same date ({start_datetime.date()})")
+    try:
+        # If start and end are on the same date
+        if start_datetime.date() == end_datetime.date():
+            _LOGGER.debug(f"is_datetime_between: Start and end on same date ({start_datetime.date()})")
+            
+            # If check datetime is also on the same date, do full comparison
+            if check_datetime.date() == start_datetime.date():
+                result = start_datetime <= check_datetime <= end_datetime
+                _LOGGER.debug(f"is_datetime_between: Full datetime comparison - {start_datetime} <= {check_datetime} <= {end_datetime} = {result}")
+                return result
+            
+            # Different date - treat as daily recurring range, compare times only
+            check_time = check_datetime.time()
+            start_time = start_datetime.time()
+            end_time = end_datetime.time()
+            
+            _LOGGER.debug(f"is_datetime_between: Recurring daily range - Check time: {check_time}, Start time: {start_time}, End time: {end_time}")
+            
+            # Handle overnight ranges (e.g., 11pm to 4am)
+            if start_time <= end_time:
+                result = start_time <= check_time <= end_time
+                _LOGGER.debug(f"is_datetime_between: Normal range - {start_time} <= {check_time} <= {end_time} = {result}")
+                return result
+            else:
+                result = check_time >= start_time or check_time <= end_time
+                _LOGGER.debug(f"is_datetime_between: Overnight range - {check_time} >= {start_time} OR {check_time} <= {end_time} = {result}")
+                return result
         
-        # If check datetime is also on the same date, do full comparison
-        if check_datetime.date() == start_datetime.date():
-            result = start_datetime <= check_datetime <= end_datetime
-            _LOGGER.debug(f"is_datetime_between: Full datetime comparison - {start_datetime} <= {check_datetime} <= {end_datetime} = {result}")
-            return result
-        
-        # Different date - treat as daily recurring range, compare times only
-        check_time = check_datetime.time()
-        start_time = start_datetime.time()
-        end_time = end_datetime.time()
-        
-        _LOGGER.debug(f"is_datetime_between: Recurring daily range - Check time: {check_time}, Start time: {start_time}, End time: {end_time}")
-        
-        # Handle overnight ranges (e.g., 11pm to 4am)
-        if start_time <= end_time:
-            result = start_time <= check_time <= end_time
-            _LOGGER.debug(f"is_datetime_between: Normal range - {start_time} <= {check_time} <= {end_time} = {result}")
-            return result
-        else:
-            result = check_time >= start_time or check_time <= end_time
-            _LOGGER.debug(f"is_datetime_between: Overnight range - {check_time} >= {start_time} OR {check_time} <= {end_time} = {result}")
-            return result
-    
-    # Start and end on different dates - normal full datetime comparison
-    result = start_datetime <= check_datetime <= end_datetime
-    _LOGGER.debug(f"is_datetime_between: Multi-day range - {start_datetime} <= {check_datetime} <= {end_datetime} = {result}")
-    return result
+        # Start and end on different dates - normal full datetime comparison
+        result = start_datetime <= check_datetime <= end_datetime
+        _LOGGER.debug(f"is_datetime_between: Multi-day range - {start_datetime} <= {check_datetime} <= {end_datetime} = {result}")
+        return result
+    except (AttributeError, TypeError) as err:
+        _LOGGER.error(f"Error checking if datetime is between ranges: {err}")
+        raise
 
 
 def do_ranges_overlap(
@@ -330,9 +359,23 @@ def do_ranges_overlap(
     
     Returns:
         True if the ranges overlap at any point
+    
+    Raises:
+        ValueError: If any datetime argument is None or invalid
     """
-    # Two ranges overlap if one doesn't end before the other starts
-    return not (range1_end < range2_start or range2_end < range1_start)
+    if None in (range1_start, range1_end, range2_start, range2_end):
+        _LOGGER.error(f"do_ranges_overlap called with None values: r1_start={range1_start}, r1_end={range1_end}, r2_start={range2_start}, r2_end={range2_end}")
+        raise ValueError("All range datetime arguments must be provided (not None)")
+    
+    try:
+        if range1_start > range1_end or range2_start > range2_end:
+            _LOGGER.warning(f"Range has start > end: range1=({range1_start}, {range1_end}), range2=({range2_start}, {range2_end})")
+        
+        # Two ranges overlap if one doesn't end before the other starts
+        return not (range1_end < range2_start or range2_end < range1_start)
+    except TypeError as err:
+        _LOGGER.error(f"Error checking if ranges overlap: {err}")
+        raise ValueError("Invalid datetime arguments in range comparison") from err
 
 
 def get_range_overlap(
@@ -369,17 +412,22 @@ def apply_offset_to_datetime(base_datetime: datetime, offset_str: str) -> Option
         offset_str: Offset string (e.g., '1 hour', '-30 minutes')
     
     Returns:
-        New datetime with offset applied, or None if offset parsing fails
+        New datetime with offset applied, or base_datetime if offset parsing fails
     """
+    if base_datetime is None:
+        _LOGGER.error("Cannot apply offset: base_datetime is None")
+        return None
+    
     if not offset_str:
         return base_datetime
     
     # Parse offset including negative values
-    parts = str(offset_str).strip().split()
-    if len(parts) < 2:
-        return base_datetime
-    
     try:
+        parts = str(offset_str).strip().split()
+        if len(parts) < 2:
+            _LOGGER.warning(f"Invalid offset format '{offset_str}': expected 'value unit' format (e.g., '1 hour')")
+            return base_datetime
+        
         value = int(parts[0])
         unit = parts[1].lower().rstrip('s')
         
@@ -391,10 +439,12 @@ def apply_offset_to_datetime(base_datetime: datetime, offset_str: str) -> Option
             "week": lambda v: timedelta(weeks=v),
         }
         
-        if unit in conversions:
-            delta = conversions[unit](value)
-            return base_datetime + delta
-    except (ValueError, IndexError):
-        pass
-    
-    return base_datetime
+        if unit not in conversions:
+            _LOGGER.warning(f"Unknown time unit '{unit}' in offset string '{offset_str}'. Valid units: second, minute, hour, day, week")
+            return base_datetime
+            
+        delta = conversions[unit](value)
+        return base_datetime + delta
+    except (ValueError, IndexError, AttributeError, TypeError) as err:
+        _LOGGER.error(f"Error applying offset '{offset_str}' to datetime: {err}")
+        return base_datetime

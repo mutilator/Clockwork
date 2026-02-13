@@ -10,7 +10,27 @@
       }
     },
     "error": {
-      "invalid_calculation": "Invalid calculation configuration"
+      "invalid_calculation": "Invalid calculation configuration",
+      "invalid_offset_format": "Invalid offset format (e.g., '1 hour', '30 minutes')",
+      "invalid_season": "Invalid season selection",
+      "invalid_fixed_date": "Invalid fixed date format",
+      "invalid_nth_weekday": "Invalid nth weekday selection",
+      "invalid_last_weekday": "Invalid last weekday selection",
+      "invalid_number_format": "Invalid number format",
+      "entity_not_found": "Referenced entity not found. It may have been deleted or renamed.",
+      "missing_name": "Calculation name is required",
+      "missing_entity_id": "Entity to monitor is required",
+      "missing_offset": "Offset is required",
+      "missing_offset_mode": "Offset mode is required",
+      "missing_pulse_duration": "Pulse duration is required for pulse mode",
+      "missing_trigger_on": "Trigger event selection is required",
+      "missing_start_entity": "Start datetime entity is required",
+      "missing_end_entity": "End datetime entity is required",
+      "missing_season": "Season is required",
+      "missing_months": "Months are required",
+      "missing_holiday": "Holiday is required",
+      "missing_holiday_type": "Holiday type is required",
+      "interval_positive": "Update interval must be greater than 0"
     },
     "abort": {
       "already_configured": "Clockwork is already configured",

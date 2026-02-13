@@ -21,6 +21,18 @@
 - **Flexible Triggering**: Control which state changes trigger offset calculations
 - **Timezone Aware**: Automatic timezone handling for datetime comparisons
 
+## Screenshots
+
+### Sensor Types Created
+Clockwork creates different types of sensors depending on the calculation type:
+
+![Example Sensors](wiki/img/ExampleSensors.png)
+
+### Holiday Countdown Example
+Create countdown sensors for holidays and special dates:
+
+![Holiday Countdown Example](wiki/img/AddHolidayCountdownNewYearExample.png)
+
 ## Installation
 
 ### Via HACS (Recommended)

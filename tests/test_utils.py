@@ -70,7 +70,7 @@ class TestValidateOffsetString:
         """Test validation of zero value."""
         is_valid, error = validate_offset_string("0 hours")
         assert not is_valid
-        assert "greater than 0" in error.lower()
+        assert "non-zero" in error.lower()
 
     def test_validate_negative_value(self):
         """Test validation of negative value (used for datetime_offset)."""

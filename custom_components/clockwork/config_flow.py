@@ -1,7 +1,7 @@
 """Config flow for Clockwork integration."""
 import logging
 import re
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Tuple, cast
 
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -83,6 +83,53 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Initialize the options flow."""
         self._selected_calc_index: Optional[int] = None
         self._selected_holiday_index: Optional[int] = None
+
+    def _validate_entities_exist(self, calc_type: str, user_input: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        """Validate that referenced entities exist in the entity registry.
+        
+        Args:
+            calc_type: The calculation type
+            user_input: The user input containing entity references
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        from homeassistant.helpers import entity_registry as er
+        
+        entity_registry = er.async_get(self.hass)
+        entity_map = {entity.entity_id: entity for entity in entity_registry.entities.values()}
+        
+        # Define which fields contain entity_id references by calculation type
+        entity_fields = {
+            CALC_TYPE_TIMESPAN: ["entity_id"],
+            CALC_TYPE_OFFSET: ["entity_id"],
+            CALC_TYPE_DATETIME_OFFSET: ["datetime_entity"],
+            CALC_TYPE_DATE_RANGE: ["start_datetime_entity", "end_datetime_entity"],
+            CALC_TYPE_SEASON: [],  # No entity dependencies
+            CALC_TYPE_MONTH: [],  # No entity dependencies
+            CALC_TYPE_HOLIDAY: [],  # No entity dependencies
+            CALC_TYPE_BETWEEN_DATES: ["start_datetime_entity", "end_datetime_entity"],
+            CALC_TYPE_OUTSIDE_DATES: ["start_datetime_entity", "end_datetime_entity"],
+        }
+        
+        fields_to_check = entity_fields.get(calc_type, [])
+        missing_entities = []
+        
+        for field in fields_to_check:
+            entity_id = user_input.get(field, "")
+            if entity_id and entity_id not in entity_map:
+                missing_entities.append(entity_id)
+        
+        if missing_entities:
+            # Build helpful error message with available entities
+            sensor_entities = [e for e in entity_map if e.startswith("sensor.") or e.startswith("binary_sensor.")]
+            available_sample = ", ".join(sensor_entities[:5])
+            if len(sensor_entities) > 5:
+                available_sample += f", ... ({len(sensor_entities)} total available)"
+            
+            return False, f"Entity(ies) not found: {', '.join(missing_entities)}. Available examples: {available_sample}"
+        
+        return True, None
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None):
         """Manage the options - show main menu."""
@@ -199,6 +246,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif (interval := user_input.get("update_interval")) is not None and interval <= 0:
                 errors["update_interval"] = "interval_positive"
             else:
+                # Validate that the referenced entity exists
+                is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_TIMESPAN, user_input)
+                if not is_valid:
+                    errors["entity_id"] = "entity_not_found"
+                    description_placeholder = {"error": error_msg}
+                    return self.async_show_form(
+                        step_id="timespan",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholder
+                    )
                 return await self._save_calculation(
                     CALC_TYPE_TIMESPAN,
                     user_input
@@ -299,6 +357,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     errors["base"] = "missing_trigger_on"
                 
                 if not errors:
+                    # Validate that the referenced entity exists
+                    is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_OFFSET, user_input)
+                    if not is_valid:
+                        errors["entity_id"] = "entity_not_found"
+                        description_placeholder = {"error": error_msg}
+                        return self.async_show_form(
+                            step_id="offset",
+                            data_schema=data_schema,
+                            errors=errors,
+                            description_placeholders=description_placeholder
+                        )
                     return await self._save_calculation(
                         CALC_TYPE_OFFSET,
                         user_input
@@ -340,6 +409,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 if not is_valid:
                     errors["offset"] = "invalid_offset_format"
                 else:
+                    # Validate that the referenced entity exists
+                    is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_DATETIME_OFFSET, user_input)
+                    if not is_valid:
+                        errors["datetime_entity"] = "entity_not_found"
+                        description_placeholder = {"error": error_msg}
+                        return self.async_show_form(
+                            step_id="datetime_offset",
+                            data_schema=data_schema,
+                            errors=errors,
+                            description_placeholders=description_placeholder
+                        )
                     return await self._save_calculation(
                         CALC_TYPE_DATETIME_OFFSET,
                         user_input
@@ -348,7 +428,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name"): str,
             vol.Required("datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("offset"): str,
             vol.Optional("icon"): str,
@@ -376,6 +456,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                # Validate that the referenced entities exist
+                is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_DATE_RANGE, user_input)
+                if not is_valid:
+                    errors["base"] = "entity_not_found"
+                    description_placeholder = {"error": error_msg}
+                    return self.async_show_form(
+                        step_id="date_range",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholder
+                    )
                 return await self._save_calculation(
                     CALC_TYPE_DATE_RANGE,
                     user_input
@@ -486,6 +577,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             "thanksgiving",
             "christmas",
         ]
+        
+        # Add custom holidays to the list
+        custom_holidays = self.config_entry.options.get("custom_holidays", [])
+        for custom_holiday in custom_holidays:
+            holiday_key = custom_holiday.get("key")
+            if holiday_key and holiday_key not in holidays:
+                holidays.append(holiday_key)
 
         data_schema = vol.Schema({
             vol.Required("name"): str,
@@ -515,6 +613,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                # Validate that the referenced entities exist
+                is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_BETWEEN_DATES, user_input)
+                if not is_valid:
+                    errors["base"] = "entity_not_found"
+                    description_placeholder = {"error": error_msg}
+                    return self.async_show_form(
+                        step_id="between_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholder
+                    )
                 return await self._save_calculation(
                     CALC_TYPE_BETWEEN_DATES,
                     user_input
@@ -523,10 +632,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name"): str,
             vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Optional("icon"): str,
         })
@@ -549,6 +658,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             elif not user_input.get("end_datetime_entity"):
                 errors["base"] = "missing_end_entity"
             else:
+                # Validate that the referenced entities exist
+                is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_OUTSIDE_DATES, user_input)
+                if not is_valid:
+                    errors["base"] = "entity_not_found"
+                    description_placeholder = {"error": error_msg}
+                    return self.async_show_form(
+                        step_id="outside_dates",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholder
+                    )
                 return await self._save_calculation(
                     CALC_TYPE_OUTSIDE_DATES,
                     user_input
@@ -557,10 +677,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name"): str,
             vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Optional("icon"): str,
         })
@@ -910,7 +1030,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("datetime_entity", default=existing_calc.get("datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("offset", default=existing_calc.get("offset", "")): str,
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
@@ -955,10 +1075,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })
@@ -1082,6 +1202,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             "thanksgiving",
             "christmas",
         ]
+        
+        # Add custom holidays to the list
+        custom_holidays = self.config_entry.options.get("custom_holidays", [])
+        for custom_holiday in custom_holidays:
+            holiday_key = custom_holiday.get("key")
+            if holiday_key and holiday_key not in holidays:
+                holidays.append(holiday_key)
 
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
@@ -1128,10 +1255,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })
@@ -1171,10 +1298,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=existing_calc.get("name", "")): str,
             vol.Required("start_datetime_entity", default=existing_calc.get("start_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Required("end_datetime_entity", default=existing_calc.get("end_datetime_entity", "")): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
             ),
             vol.Optional("icon", default=existing_calc.get("icon", "")): str,
         })

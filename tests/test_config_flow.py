@@ -146,6 +146,22 @@ class TestClockworkOptionsFlow:
         assert result["type"] == "abort"
         assert result["reason"] == "unsupported_calculation_type"
 
+    @pytest.mark.asyncio
+    async def test_modify_by_type_holiday(self, options_flow):
+        """Test routing to holiday modify method."""
+        # Add a holiday calculation to the config for this test
+        options_flow.config_entry.options[CONF_CALCULATIONS].append(
+            {"name": "Test Holiday", "type": "holiday", "holiday": "christmas", "offset": 0}
+        )
+        options_flow._selected_calc_index = 2  # Set the selected index to the new holiday calc
+        with patch.object(options_flow, 'async_step_modify_holiday') as mock_method:
+            mock_method.return_value = {"type": "form", "step_id": "modify_holiday"}
+            
+            result = await options_flow.async_step_modify_by_type("holiday")
+            
+            mock_method.assert_called_once()
+            assert result == {"type": "form", "step_id": "modify_holiday"}
+
 
 class TestClockworkOptionsFlowCustomHolidays:
     """Test Clockwork options flow custom holiday management."""
@@ -307,3 +323,50 @@ class TestClockworkOptionsFlowCustomHolidays:
         assert result["type"] == "form"
         assert result["step_id"] == "delete_custom_holiday"
         assert "data_schema" in result
+
+    @pytest.mark.asyncio
+    async def test_holiday_calculation_includes_custom_holidays(self, options_flow):
+        """Test that custom holidays appear in the holiday calculation dropdown."""
+        # The fixture already sets up custom holidays, so we can test directly
+        result = await options_flow.async_step_holiday()
+        
+        assert result["type"] == "form"
+        assert result["step_id"] == "holiday"
+        assert "data_schema" in result
+        
+        # Check that the holiday selector includes custom holidays
+        holiday_selector = result["data_schema"].schema["holiday"]
+        holidays_list = holiday_selector.container
+        
+        # Should include preset holidays
+        assert "christmas" in holidays_list
+        assert "new_years_day" in holidays_list
+        
+        # Should include custom holidays
+        assert "test_holiday" in holidays_list
+
+    @pytest.mark.asyncio
+    async def test_modify_holiday_includes_custom_holidays(self, options_flow):
+        """Test that custom holidays appear in the modify holiday calculation dropdown."""
+        # Add a holiday calculation to modify
+        options_flow.config_entry.options[CONF_CALCULATIONS].append(
+            {"name": "Test Holiday Calc", "type": "holiday", "holiday": "christmas", "offset": 0}
+        )
+        options_flow._selected_calc_index = 0  # Set to the holiday calculation index
+        
+        result = await options_flow.async_step_modify_holiday()
+        
+        assert result["type"] == "form"
+        assert result["step_id"] == "modify_holiday"
+        assert "data_schema" in result
+        
+        # Check that the holiday selector includes custom holidays
+        holiday_selector = result["data_schema"].schema["holiday"]
+        holidays_list = holiday_selector.container
+        
+        # Should include preset holidays
+        assert "christmas" in holidays_list
+        assert "new_years_day" in holidays_list
+        
+        # Should include custom holidays
+        assert "test_holiday" in holidays_list

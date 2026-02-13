@@ -192,6 +192,26 @@ async def test_update_state(mock_hass):
         assert sensor._state is not None  # State should be set to the time difference
 
 
+class TestClockworkTimespanSensor:
+    """Test timespan sensor."""
+
+    def test_initialization(self, mock_hass):
+        """Test sensor initialization."""
+        config = {
+            "name": "Test Timespan",
+            "entity_id": "binary_sensor.test",
+            "update_interval": 30,
+            "track_state": "on",
+        }
+        entry = MagicMock()
+
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+
+        assert sensor.name == "Test Timespan"
+        assert sensor._config == config
+        assert sensor.device_class == SensorDeviceClass.DURATION
+
+
 class TestClockworkDatetimeOffsetSensor:
     """Test datetime offset sensor."""
 
@@ -208,6 +228,7 @@ class TestClockworkDatetimeOffsetSensor:
 
         assert sensor.name == "Test Datetime Offset"
         assert sensor._config == config
+        assert sensor.device_class == SensorDeviceClass.TIMESTAMP
 
 
 class TestClockworkDateRangeSensor:
@@ -226,6 +247,7 @@ class TestClockworkDateRangeSensor:
 
         assert sensor.name == "Test Date Range"
         assert sensor._config == config
+        assert sensor.device_class == SensorDeviceClass.DURATION
 
 
 class TestClockworkHolidaySensor:
@@ -244,6 +266,7 @@ class TestClockworkHolidaySensor:
 
         assert sensor.name == "Test Holiday"
         assert sensor._config == config
+        assert sensor.device_class == SensorDeviceClass.DURATION
 
 @pytest.mark.asyncio
 async def test_datetime_offset_update_state(mock_hass):
