@@ -20,6 +20,9 @@ async def test_async_setup_entry():
     hass.config_entries = MagicMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock(return_value=True)
     hass.async_add_executor_job = AsyncMock(return_value={})
+    hass.services = MagicMock()
+    hass.services.async_register = MagicMock()
+    hass.bus = MagicMock()
 
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = "test_entry"
@@ -35,6 +38,12 @@ async def test_async_setup_entry():
 
         result = await async_setup_entry(hass, entry)
         assert result is True
+        # Verify service was registered
+        hass.services.async_register.assert_called_once()
+        # Verify the service was registered with correct domain and name
+        call_args = hass.services.async_register.call_args
+        assert call_args[0][0] == DOMAIN
+        assert call_args[0][1] == "scan_automations"
 
 
 @pytest.mark.asyncio

@@ -292,6 +292,7 @@ class ClockworkMonthBinarySensor(BinarySensorEntity):
         self.hass = hass
         self._config_entry = config_entry
         self._months = [int(m) for m in config.get("months", "").split(",") if m.strip().isdigit()]
+        self._is_on = False
         self._remove_listener = None
 
     @property
@@ -322,7 +323,7 @@ class ClockworkMonthBinarySensor(BinarySensorEntity):
     @property
     def icon(self) -> str:
         """Return the icon."""
-        return "mdi:calendar-check" if self._is_on else "mdi:calendar-blank"
+        return "mdi:calendar-check" if self.is_on else "mdi:calendar-blank"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

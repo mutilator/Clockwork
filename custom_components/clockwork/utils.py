@@ -448,3 +448,99 @@ def apply_offset_to_datetime(base_datetime: datetime, offset_str: str) -> Option
     except (ValueError, IndexError, AttributeError, TypeError) as err:
         _LOGGER.error(f"Error applying offset '{offset_str}' to datetime: {err}")
         return base_datetime
+
+
+def scan_automations_for_time_usage(hass: "HomeAssistant") -> Dict[str, dict]:
+    """Scan automations.yaml for automations using date/time functions.
+    
+    Searches for common date/time patterns in automation triggers and conditions.
+    
+    Args:
+        hass: Home Assistant instance
+        
+    Returns:
+        Dictionary with 'automations' list containing matched automations
+        Format: {
+            'automations': [
+                {
+                    'id': 'automation_id',
+                    'alias': 'Automation Alias',
+                    'patterns': ['list', 'of', 'patterns', 'found']
+                },
+                ...
+            ]
+        }
+    """
+    import re
+    import yaml
+    from pathlib import Path
+    
+    # Patterns to search for in automation content
+    time_patterns = {
+        'at': r'\bat:',  # at: trigger
+        'platform_time': r'\bplatform:\s*time',  # platform: time
+        'condition_time': r'\bcondition:\s*time',  # condition: time
+        'before': r'\b(before|after|weekday):\s*',  # before/after/weekday condition
+        'now_function': r'\bnow\(\)',  # now() function
+        'utcnow_function': r'\butcnow\(\)',  # utcnow() function
+        'relative_date': r'\b(trigger\.(yesterday|tomorrow))',  # relative dates
+        'time_field': r'\b(hour|minute|second|month|day|year|date|time):\s*',  # time fields
+        'timestamp': r'\b(timestamp|epoch)\b',  # timestamp references
+    }
+    
+    result = {'automations': []}
+    
+    try:
+        # Try to load automations.yaml from config directory
+        config_dir = hass.config.path()
+        automations_path = Path(config_dir) / "automations.yaml"
+        
+        if not automations_path.exists():
+            _LOGGER.debug("automations.yaml not found, no automations to scan")
+            return result
+        
+        with open(automations_path, 'r') as f:
+            content = f.read()
+        
+        # Parse YAML
+        try:
+            automations = yaml.safe_load(content) or []
+        except yaml.YAMLError as err:
+            _LOGGER.error(f"Error parsing automations.yaml: {err}")
+            return result
+        
+        # Ensure automations is a list
+        if not isinstance(automations, list):
+            automations = [automations] if automations else []
+        
+        # Search each automation for time patterns
+        for automation in automations:
+            if not isinstance(automation, dict):
+                continue
+                
+            auto_id = automation.get('id', '')
+            auto_alias = automation.get('alias', auto_id)
+            
+            # Convert automation to string for pattern matching
+            auto_str = str(automation).lower()
+            
+            # Find all matching patterns
+            found_patterns = []
+            for pattern_name, pattern_regex in time_patterns.items():
+                if re.search(pattern_regex, auto_str, re.IGNORECASE):
+                    found_patterns.append(pattern_name)
+            
+            # Add to results if any patterns found
+            if found_patterns:
+                result['automations'].append({
+                    'id': auto_id,
+                    'alias': auto_alias,
+                    'patterns': found_patterns
+                })
+        
+        _LOGGER.debug(f"Found {len(result['automations'])} automations with time/date patterns")
+        return result
+        
+    except Exception as err:
+        _LOGGER.error(f"Error scanning automations.yaml: {err}")
+        return result

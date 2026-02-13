@@ -10,8 +10,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS
+from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS, SERVICE_SCAN_AUTOMATIONS
 from .diagnostics import async_get_config_entry_diagnostics
+from .utils import scan_automations_for_time_usage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +90,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Listen for options updates
     entry.async_on_unload(
         entry.add_update_listener(async_update_options)
+    )
+
+    # Register service to scan automations for time usage
+    async def handle_scan_automations(call):
+        """Handle the scan automations service call.
+        
+        Returns results directly and also fires an event for backward compatibility.
+        """
+        result = scan_automations_for_time_usage(hass)
+        _LOGGER.info(f"Scan automations service: Found {len(result['automations'])} automations with time/date patterns")
+        
+        # Fire event for backward compatibility (listeners can still use this)
+        hass.bus.async_fire(
+            f"{DOMAIN}_automations_scanned",
+            {"automations": result['automations']}
+        )
+        
+        # Return results directly (new approach)
+        return result
+    
+    # Register the service
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SCAN_AUTOMATIONS,
+        handle_scan_automations,
+        supports_response="only"  # This service returns data
     )
 
     return True

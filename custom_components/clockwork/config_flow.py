@@ -142,6 +142,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 "custom_holiday": "Add Custom Holiday",
                 "modify_custom_holiday": "Modify Custom Holiday",
                 "delete_custom_holiday": "Delete Custom Holiday",
+                "scan_automations": "Scan Automations for Time Patterns",
             },
         )
 
@@ -238,6 +239,14 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle timespan calculation."""
         errors = {}
         
+        data_schema = vol.Schema({
+            vol.Required("name"): str,
+            vol.Required("entity_id"): selector.EntitySelector(),
+            vol.Optional("track_state", default="on"): vol.In(["on", "off", "both"]),
+            vol.Optional("update_interval", default=60): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("icon"): str,
+        })
+        
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
@@ -261,14 +270,6 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     CALC_TYPE_TIMESPAN,
                     user_input
                 )
-
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("entity_id"): selector.EntitySelector(),
-            vol.Optional("track_state", default="on"): vol.In(["on", "off", "both"]),
-            vol.Optional("update_interval", default=60): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional("icon"): str,
-        })
 
         return self.async_show_form(
             step_id="timespan",
@@ -331,6 +332,16 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle offset calculation."""
         errors = {}
         
+        data_schema = vol.Schema({
+            vol.Required("name"): str,
+            vol.Required("entity_id"): selector.EntitySelector(),
+            vol.Required("offset"): str,
+            vol.Required("offset_mode", default="latch"): vol.In(["pulse", "duration", "latch"]),
+            vol.Optional("pulse_duration"): str,
+            vol.Required("trigger_on", default="on"): vol.In(["on", "off", "both"]),
+            vol.Optional("icon"): str,
+        })
+        
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
@@ -373,15 +384,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         user_input
                     )
 
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("entity_id"): selector.EntitySelector(),
-            vol.Required("offset"): str,
-            vol.Required("offset_mode", default="latch"): vol.In(["pulse", "duration", "latch"]),
-            vol.Optional("pulse_duration"): str,
-            vol.Required("trigger_on", default="on"): vol.In(["on", "off", "both"]),
-            vol.Optional("icon"): str,
-        })
+        
 
         return self.async_show_form(
             step_id="offset",
@@ -395,6 +398,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_datetime_offset(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle datetime offset calculation."""
         errors = {}
+        
+        data_schema = vol.Schema({
+            vol.Required("name"): str,
+            vol.Required("datetime_entity"): selector.EntitySelector(
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+            ),
+            vol.Required("offset"): str,
+            vol.Optional("icon"): str,
+        })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -425,15 +437,6 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                         user_input
                     )
 
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Required("offset"): str,
-            vol.Optional("icon"): str,
-        })
-
         return self.async_show_form(
             step_id="datetime_offset",
             data_schema=data_schema,
@@ -447,6 +450,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_date_range(self, user_input: Optional[Dict[str, Any]] = None):
         """Handle date range calculation."""
         errors = {}
+        
+        data_schema = vol.Schema({
+            vol.Required("name"): str,
+            vol.Required("start_datetime_entity"): selector.EntitySelector(
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+            ),
+            vol.Required("end_datetime_entity"): selector.EntitySelector(
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
+            ),
+            vol.Optional("icon"): str,
+        })
         
         if user_input is not None:
             if not user_input.get("name"):
@@ -471,17 +485,6 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     CALC_TYPE_DATE_RANGE,
                     user_input
                 )
-
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
-            ),
-            vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"]}}
-            ),
-            vol.Optional("icon"): str,
-        })
 
         return self.async_show_form(
             step_id="date_range",
@@ -605,6 +608,17 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle between dates calculation."""
         errors = {}
         
+        data_schema = vol.Schema({
+            vol.Required("name"): str,
+            vol.Required("start_datetime_entity"): selector.EntitySelector(
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+            ),
+            vol.Required("end_datetime_entity"): selector.EntitySelector(
+                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
+            ),
+            vol.Optional("icon"): str,
+        })
+        
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
@@ -629,6 +643,15 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     user_input
                 )
 
+        return self.async_show_form(
+            step_id="between_dates",
+            data_schema=data_schema,
+            errors=errors,
+        )
+
+    async def async_step_outside_dates(self, user_input: Optional[Dict[str, Any]] = None):
+        """Handle outside dates calculation."""
+        errors = {}
         data_schema = vol.Schema({
             vol.Required("name"): str,
             vol.Required("start_datetime_entity"): selector.EntitySelector(
@@ -640,16 +663,6 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("icon"): str,
         })
 
-        return self.async_show_form(
-            step_id="between_dates",
-            data_schema=data_schema,
-            errors=errors,
-        )
-
-    async def async_step_outside_dates(self, user_input: Optional[Dict[str, Any]] = None):
-        """Handle outside dates calculation."""
-        errors = {}
-        
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
@@ -673,18 +686,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     CALC_TYPE_OUTSIDE_DATES,
                     user_input
                 )
-
-        data_schema = vol.Schema({
-            vol.Required("name"): str,
-            vol.Required("start_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Required("end_datetime_entity"): selector.EntitySelector(
-                {"filter": {"domain": ["time", "calendar", "input_datetime", "sensor"], "device_class": ["date", "timestamp"]}}
-            ),
-            vol.Optional("icon"): str,
-        })
-
+ 
         return self.async_show_form(
             step_id="outside_dates",
             data_schema=data_schema,
@@ -1596,4 +1598,51 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 "name": calc.get("name", "Unknown") if calc else "Unknown",
                 "type": calc.get("type", "unknown") if calc else "unknown"
             }
+        )
+
+    async def async_step_scan_automations(self, user_input: Optional[Dict[str, Any]] = None):
+        """Scan automations for time/date patterns and display results."""
+        from .utils import scan_automations_for_time_usage
+        
+        if user_input is not None:
+            # User clicked submit - return to main menu
+            return await self.async_step_init()
+        
+        # Scan automations
+        try:
+            scan_result = scan_automations_for_time_usage(self.hass)
+            automations = scan_result.get("automations", [])
+        except Exception as err:
+            _LOGGER.error(f"Error scanning automations: {err}")
+            automations = []
+        
+        # Build description with results
+        if automations:
+            results_lines = [f"**Found {len(automations)} automations with time/date patterns:**\n"]
+            for automation in automations:
+                auto_alias = automation.get("alias", automation.get("id", "Unknown"))
+                auto_id = automation.get("id", "")
+                patterns = automation.get("patterns", [])
+                patterns_str = ", ".join(patterns) if patterns else "unknown"
+                
+                # Create a link to the automation (opens in the UI)
+                if auto_id:
+                    results_lines.append(f"• **[{auto_alias}](/config/automation/edit/{auto_id})**: {patterns_str}")
+                else:
+                    results_lines.append(f"• **{auto_alias}**: {patterns_str}")
+            
+            description = "\n".join(results_lines)
+            description += "\n\nClick on any automation name above to edit it. Results also logged in Settings → Logs."
+            
+            # Log for reference
+            _LOGGER.info(f"Found {len(automations)} automations with time/date patterns")
+        else:
+            description = "No automations with time/date patterns found.\n\nYour automations don't appear to use time/date triggers or conditions."
+            _LOGGER.info("No automations with time/date patterns found")
+        
+        # Show form with results in description
+        return self.async_show_form(
+            step_id="scan_automations",
+            data_schema=vol.Schema({}),
+            description_placeholders={"results": description}
         )

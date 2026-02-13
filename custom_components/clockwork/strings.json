@@ -50,7 +50,8 @@
           "delete_calculation": "Delete Calculation",
           "custom_holiday": "Add Custom Holiday",
           "modify_custom_holiday": "Modify Custom Holiday",
-          "delete_custom_holiday": "Delete Custom Holiday"
+          "delete_custom_holiday": "Delete Custom Holiday",
+          "scan_automations": "Scan Automations for Time Patterns"
         }
       },
       "add_calculation": {
@@ -347,6 +348,10 @@
           "end_datetime_entity": "End Datetime Entity",
           "icon": "Icon (optional)"
         }
+      },
+      "scan_automations": {
+        "title": "Automation Scanner",
+        "description": "{results}"
       }
     }
   }

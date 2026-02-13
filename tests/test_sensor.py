@@ -345,3 +345,222 @@ async def test_holiday_update_state(mock_hass):
         with patch('threading.get_ident', return_value=1):  # Mock thread ID to match loop_thread_id
             sensor._update_state()
             assert sensor._state == 30
+
+
+class TestSensorUniqueIds:
+    """Test unique ID format for sensor types."""
+
+    def test_timespan_unique_id(self, mock_hass):
+        """Test timespan sensor unique ID."""
+        config = {"name": "Door Open Time"}
+        entry = MagicMock()
+        entry.entry_id = "test_001"
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        
+        assert "clockwork_test_001_" in sensor.unique_id
+        assert "door_open_time" in sensor.unique_id.lower()
+
+    def test_datetime_offset_unique_id(self, mock_hass):
+        """Test datetime offset sensor unique ID."""
+        config = {"name": "Event Time"}
+        entry = MagicMock()
+        entry.entry_id = "test_002"
+        sensor = ClockworkDatetimeOffsetSensor(config, mock_hass, entry)
+        
+        assert "clockwork_test_002_" in sensor.unique_id
+
+    def test_date_range_unique_id(self, mock_hass):
+        """Test date range sensor unique ID."""
+        config = {"name": "Vacation Duration"}
+        entry = MagicMock()
+        entry.entry_id = "test_003"
+        sensor = ClockworkDateRangeSensor(config, mock_hass, entry)
+        
+        assert "clockwork_test_003_" in sensor.unique_id
+
+    def test_holiday_unique_id(self, mock_hass):
+        """Test holiday sensor unique ID."""
+        config = {"name": "Days Until Christmas"}
+        entry = MagicMock()
+        entry.entry_id = "test_004"
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], entry)
+        
+        assert "clockwork_test_004_" in sensor.unique_id
+
+
+class TestSensorStateProperty:
+    """Test state property for sensors."""
+
+    def test_timespan_state_none_initially(self, mock_hass):
+        """Test timespan sensor state is None initially."""
+        config = {"name": "Test", "entity_id": "binary_sensor.test"}
+        entry = MagicMock()
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        assert sensor.state is None
+
+    def test_timespan_state_when_set(self, mock_hass):
+        """Test timespan sensor state when set."""
+        config = {"name": "Test", "entity_id": "binary_sensor.test"}
+        entry = MagicMock()
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        sensor._state = "1:30:00"
+        assert sensor.state == "1:30:00"
+
+    def test_datetime_offset_state_when_set(self, mock_hass):
+        """Test datetime offset sensor state when set."""
+        config = {"name": "Test", "datetime_entity": "input_datetime.test"}
+        entry = MagicMock()
+        sensor = ClockworkDatetimeOffsetSensor(config, mock_hass, entry)
+        sensor._state = "2024-01-15 14:30:00"
+        assert sensor.state == "2024-01-15 14:30:00"
+
+    def test_date_range_state_when_set(self, mock_hass):
+        """Test date range sensor state when set."""
+        config = {"name": "Test", "start_datetime_entity": "input_datetime.start", "end_datetime_entity": "input_datetime.end"}
+        entry = MagicMock()
+        sensor = ClockworkDateRangeSensor(config, mock_hass, entry)
+        sensor._state = 42
+        assert sensor.state == 42
+
+    def test_holiday_state_when_set(self, mock_hass):
+        """Test holiday sensor state when set."""
+        config = {"name": "Test", "holiday": "christmas", "offset": 0}
+        entry = MagicMock()
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], entry)
+        sensor._state = 315
+        assert sensor.state == 315
+
+
+class TestSensorDeviceClass:
+    """Test device_class property for sensors."""
+
+    def test_timespan_device_class_is_duration(self, mock_hass):
+        """Test timespan sensor device class."""
+        config = {"name": "Test", "entity_id": "binary_sensor.test"}
+        entry = MagicMock()
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        assert sensor.device_class == SensorDeviceClass.DURATION
+
+    def test_datetime_offset_device_class_is_timestamp(self, mock_hass):
+        """Test datetime offset sensor device class."""
+        config = {"name": "Test", "datetime_entity": "input_datetime.test"}
+        entry = MagicMock()
+        sensor = ClockworkDatetimeOffsetSensor(config, mock_hass, entry)
+        assert sensor.device_class == SensorDeviceClass.TIMESTAMP
+
+    def test_date_range_device_class_is_duration(self, mock_hass):
+        """Test date range sensor device class."""
+        config = {"name": "Test", "start_datetime_entity": "input_datetime.start", "end_datetime_entity": "input_datetime.end"}
+        entry = MagicMock()
+        sensor = ClockworkDateRangeSensor(config, mock_hass, entry)
+        assert sensor.device_class == SensorDeviceClass.DURATION
+
+    def test_holiday_device_class_is_duration(self, mock_hass):
+        """Test holiday sensor device class."""
+        config = {"name": "Test", "holiday": "christmas", "offset": 0}
+        entry = MagicMock()
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], entry)
+        assert sensor.device_class == SensorDeviceClass.DURATION
+
+
+class TestSensorIcon:
+    """Test icon property for sensors."""
+
+    def test_timespan_icon(self, mock_hass):
+        """Test timespan sensor icon."""
+        config = {"name": "Test", "entity_id": "binary_sensor.test"}
+        entry = MagicMock()
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        assert sensor.icon == "mdi:timer-outline"
+
+    def test_datetime_offset_icon(self, mock_hass):
+        """Test datetime offset sensor icon."""
+        config = {"name": "Test", "datetime_entity": "input_datetime.test"}
+        entry = MagicMock()
+        sensor = ClockworkDatetimeOffsetSensor(config, mock_hass, entry)
+        assert sensor.icon == "mdi:calendar-clock"
+
+    def test_date_range_icon(self, mock_hass):
+        """Test date range sensor icon."""
+        config = {"name": "Test", "start_datetime_entity": "input_datetime.start", "end_datetime_entity": "input_datetime.end"}
+        entry = MagicMock()
+        sensor = ClockworkDateRangeSensor(config, mock_hass, entry)
+        assert sensor.icon == "mdi:timer-outline"
+
+    def test_holiday_icon(self, mock_hass):
+        """Test holiday sensor icon."""
+        config = {"name": "Test", "holiday": "christmas", "offset": 0}
+        entry = MagicMock()
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], entry)
+        assert sensor.icon == "mdi:calendar-star"
+
+
+class TestSensorUnitMeasurement:
+    """Test unit_of_measurement property for sensors."""
+
+    def test_timespan_unit_is_seconds(self, mock_hass):
+        """Test timespan sensor unit."""
+        config = {"name": "Test", "entity_id": "binary_sensor.test"}
+        entry = MagicMock()
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        assert sensor.unit_of_measurement == "seconds"
+
+    def test_date_range_unit_is_hours(self, mock_hass):
+        """Test date range sensor unit."""
+        config = {"name": "Test", "start_datetime_entity": "input_datetime.start", "end_datetime_entity": "input_datetime.end"}
+        entry = MagicMock()
+        sensor = ClockworkDateRangeSensor(config, mock_hass, entry)
+        assert sensor.unit_of_measurement == "hours"
+
+    def test_holiday_unit_is_days(self, mock_hass):
+        """Test holiday sensor unit."""
+        config = {"name": "Test", "holiday": "christmas", "offset": 0}
+        entry = MagicMock()
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], entry)
+        assert sensor.unit_of_measurement == "days"
+
+
+class TestSensorExtraAttributes:
+    """Test extra_state_attributes for sensors."""
+
+    def test_timespan_attributes_includes_config(self, mock_hass):
+        """Test timespan sensor attributes include config."""
+        config = {"name": "Test", "entity_id": "binary_sensor.test", "track_state": "on"}
+        entry = MagicMock()
+        sensor = ClockworkTimespanSensor(config, mock_hass, entry)
+        
+        mock_hass.states.get.return_value = MagicMock()
+        attrs = sensor.extra_state_attributes
+        assert "name" in attrs
+        assert "entity_id" in attrs
+
+    def test_datetime_offset_attributes_includes_config(self, mock_hass):
+        """Test datetime offset sensor attributes include config."""
+        config = {"name": "Test", "datetime_entity": "input_datetime.test", "offset": "1 hour"}
+        entry = MagicMock()
+        sensor = ClockworkDatetimeOffsetSensor(config, mock_hass, entry)
+        
+        mock_hass.states.get.return_value = MagicMock()
+        attrs = sensor.extra_state_attributes
+        assert "name" in attrs
+        assert "offset" in attrs
+
+    def test_date_range_attributes_includes_config(self, mock_hass):
+        """Test date range sensor attributes include config."""
+        config = {"name": "Test", "start_datetime_entity": "input_datetime.start", "end_datetime_entity": "input_datetime.end"}
+        entry = MagicMock()
+        sensor = ClockworkDateRangeSensor(config, mock_hass, entry)
+        
+        mock_hass.states.get.return_value = MagicMock()
+        attrs = sensor.extra_state_attributes
+        assert "name" in attrs
+
+    def test_holiday_attributes_includes_config(self, mock_hass):
+        """Test holiday sensor attributes include config."""
+        config = {"name": "Test", "holiday": "christmas", "offset": 0}
+        entry = MagicMock()
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], entry)
+        
+        attrs = sensor.extra_state_attributes
+        assert "name" in attrs
+        assert "holiday" in attrs

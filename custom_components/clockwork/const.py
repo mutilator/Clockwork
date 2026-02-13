@@ -3,6 +3,9 @@ DOMAIN = "clockwork"
 
 CONF_CALCULATIONS = "calculations"
 
+# Services
+SERVICE_SCAN_AUTOMATIONS = "scan_automations"
+
 # Calculation types
 CALC_TYPE_TIMESPAN = "timespan"
 CALC_TYPE_OFFSET = "offset"
