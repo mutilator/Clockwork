@@ -4,12 +4,11 @@
      width="128"
      align="right"
      style="float: right; margin: 10px 0px 20px 20px;" />
-<br/><br/>
+<br/>
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/custom-repositories)
 [![GitHub release](https://img.shields.io/github/release/mutilator/clockwork.svg)](https://github.com/mutilator/clockwork/releases)
 
-<br/>
 
 # Clockwork
 
