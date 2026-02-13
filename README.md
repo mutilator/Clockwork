@@ -1,4 +1,7 @@
-# Clockwork
+<div style="display: flex; align-items: center; gap: 20px;">
+  <img src="img/icon.png" alt="Clockwork Logo" width="150">
+  <h1>Clockwork</h1>
+</div>
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/custom-repositories)
 [![GitHub release](https://img.shields.io/github/release/mutilator/clockwork.svg)](https://github.com/mutilator/clockwork/releases)
