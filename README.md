@@ -1,11 +1,17 @@
-<div style="display: flex; align-items: center; gap: 20px;">
-  <img src="img/icon.png" alt="Clockwork Logo" width="150">
-  <h1>Clockwork</h1>
-</div>
+
+<img src="img/icon.png"
+     alt="Clockwork icon"
+     width="128"
+     align="right"
+     style="float: right; margin: 10px 0px 20px 20px;" />
+<br/><br/>
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/custom-repositories)
 [![GitHub release](https://img.shields.io/github/release/mutilator/clockwork.svg)](https://github.com/mutilator/clockwork/releases)
-[![GitHub License](https://img.shields.io/github/license/mutilator/clockwork.svg)](LICENSE)
+
+<br/>
+
+# Clockwork
 
 `Clockwork` is a custom integration for [Home Assistant](https://www.home-assistant.io/) that provides advanced date, time, and duration calculations. Create sensors and binary sensors for measuring timespans, checking date ranges, detecting seasons, and triggering time-based automations.
 
