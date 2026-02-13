@@ -43,12 +43,12 @@ For detailed guides and examples for each calculation type, visit the **[Clockwo
 ### Sensor Types Created
 Clockwork creates different types of sensors depending on the calculation type:
 
-![Example Sensors](wiki/img/ExampleSensors.png)
+![Example Sensors](img/ExampleSensors.png)
 
 ### Holiday Countdown Example
 Create countdown sensors for holidays and special dates:
 
-![Holiday Countdown Example](wiki/img/AddHolidayCountdownNewYearExample.png)
+![Holiday Countdown Example](img/AddHolidayCountdownNewYearExample.png)
 
 ## Installation
 
