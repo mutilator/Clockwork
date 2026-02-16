@@ -24,6 +24,7 @@
 - **Month Detection**: Check if current date falls in specified months  
 - **Holiday Countdowns**: Built-in US holidays plus custom holiday support
 - **Date Range Checks**: Determine if current time is within or outside a range
+- **Custom Automation Conditions**: Duration-based conditions for automations (check how long since entity changed)
 - **No YAML Required**: All configuration through intuitive Home Assistant UI
 - **Real-time Updates**: Configurable update intervals for time-based sensors
 - **Flexible Triggering**: Control which state changes trigger offset calculations
@@ -45,6 +46,8 @@ For detailed guides and examples for each calculation type, visit the **[Clockwo
 | Holiday Countdown | [Days until next holiday](https://github.com/mutilator/clockwork/wiki/Holiday-Countdown) |
 | Custom Holidays | [Define your own holidays](https://github.com/mutilator/clockwork/wiki/Custom-Holidays) |
 | Between/Outside Dates | [Date range checks](https://github.com/mutilator/clockwork/wiki/Between-Dates-Check) |
+| Custom Automation Conditions | [Duration-based automation conditions](https://github.com/mutilator/clockwork/wiki/Custom-Automation-Conditions) |
+| Scan Automations | [Discover time-based automations](https://github.com/mutilator/clockwork/wiki/Scan-Automations) |
 
 ## Screenshots
 
@@ -108,22 +111,67 @@ All configuration is done through the Home Assistant UI. No YAML editing require
 - **Between Dates** - True when current time is within range
 - **Outside Dates** - True when current time is outside range
 
+### Scan Automations Service
+
+Discover which of your automations use time or date-based triggers and conditions. This helps you identify automations that could benefit from Clockwork calculations.
+
+**How to use:**
+- Go to **Settings > Devices & Services > Clockwork > Configure**
+- Select **Scan Automations for Time Patterns**
+- Results display immediately showing automations with time/date patterns
+
+Or call the service directly:
+- Go to **Developer Tools > Services**
+- Call `clockwork.scan_automations`
+- Results show in logs and notifications
+
+See [Scan Automations](https://github.com/mutilator/clockwork/wiki/Scan-Automations) wiki page for details.
+
 ## Quick Example
 
-To see Clockwork in action:
+To see Clockwork in action, use an **Offset Calculation** for a garage door alert:
 
-1. Install the integration
-2. Create a **Timespan Calculation** for a door sensor:
-   - Name: "Door Open Duration"
-   - Entity: Your door sensor
-   - Track State: "on"
-3. Use in an automation to alert if door is open for 30+ minutes:
-   ```yaml
-   condition:
-     - condition: numeric_state
-       entity_id: sensor.door_open_duration
-       above: 1800  # 30 minutes in seconds
-   ```
+**Traditional Approach** (with delays and conditions):
+```yaml
+automation:
+  - alias: "Garage Door Alert"
+    trigger:
+      platform: state
+      entity_id: binary_sensor.garage_door
+      to: "on"
+    action:
+      - delay: "00:30:00"  # Wait 30 minutes
+      - condition: state
+        entity_id: binary_sensor.garage_door
+        state: "on"  # Still open?
+      - service: notify.send_alert
+        data:
+          message: "Garage door has been open for 30 minutes"
+```
+
+**With Clockwork** (simple, robust, restart-safe):
+1. Create an **Offset Calculation**:
+   - Name: "Garage Door Open 30min"
+   - Entity: `binary_sensor.garage_door`
+   - Time Offset: "30 minutes"
+   - Behavior Mode: "pulse" (alert once) or "duration" (stay active while alert is relevant)
+   - Trigger Event: "on"
+
+2. Simplify your automation:
+```yaml
+automation:
+  - alias: "Garage Door Alert"
+    trigger:
+      platform: state
+      entity_id: binary_sensor.garage_door_open_30min
+      to: "on"
+    action:
+      service: notify.send_alert
+      data:
+        message: "Garage door has been open for 30 minutes"
+```
+
+**Key Benefit**: The offset calculation **survives Home Assistant restarts** — the 30-minute timer continues accurately even if HA restarts. No delays, no conditions, no hassle.
 
 For more examples and walkthroughs, see the [wiki](https://github.com/mutilator/clockwork/wiki).
 

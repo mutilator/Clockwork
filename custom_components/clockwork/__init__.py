@@ -16,6 +16,12 @@ from .utils import scan_automations_for_time_usage
 
 _LOGGER = logging.getLogger(__name__)
 
+# Import condition module to register automation conditions (only if platform is available)
+try:
+    from . import condition  # noqa: F401
+except ImportError:
+    _LOGGER.debug("Automation condition platform not available in this Home Assistant version")
+
 
 def _load_json_file(filename: str) -> dict:
     """Load a JSON file from the component directory synchronously."""
@@ -29,11 +35,41 @@ async def _load_json_async(hass: HomeAssistant, filename: str) -> dict:
     return await hass.async_add_executor_job(_load_json_file, filename)
 
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up Clockwork integration at component level.
+    
+    This ensures the conditions platform is loaded and registered.
+    """
+    _LOGGER.info("Setting up Clockwork integration")
+    
+    # Import and verify condition module is loaded
+    try:
+        from . import condition as condition_module
+        _LOGGER.info(f"Clockwork condition module loaded: {condition_module}")
+        _LOGGER.info(f"Clockwork if_action function available: {hasattr(condition_module, 'if_action')}")
+        _LOGGER.info(f"Clockwork CONDITION_SCHEMA available: {hasattr(condition_module, 'CONDITION_SCHEMA')}")
+    except Exception as err:
+        _LOGGER.error(f"Error loading Clockwork condition module: {err}", exc_info=True)
+    
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Clockwork from a config entry."""
+    _LOGGER.info(f"Setting up Clockwork config entry: {entry.entry_id}")
+    
+    # Ensure condition platform is loaded
+    try:
+        from . import condition as condition_module
+        _LOGGER.info("Clockwork condition platform verified for this entry")
+    except Exception as err:
+        _LOGGER.warning(f"Could not verify conditions platform: {err}")
+    
     hass.data.setdefault(DOMAIN, {})
     calculations = entry.options.get(CONF_CALCULATIONS, entry.data.get(CONF_CALCULATIONS, []))
     hass.data[DOMAIN][entry.entry_id] = calculations
+    
+    _LOGGER.debug(f"Setup entry {entry.entry_id}: {len(calculations)} calculations configured")
 
     # Load JSON files once at setup time and cache them in hass.data
     # This avoids blocking I/O operations in async contexts by using executor

@@ -376,5 +376,29 @@
       "holiday_updated": "Custom holiday has been updated successfully.",
       "holiday_deleted": "Custom holiday has been deleted successfully."
     }
+  },
+  "conditions": {
+    "timespan": {
+      "name": "Clockwork Last Changed",
+      "description": "Check how long it's been since an entity last changed state",
+      "fields": {
+        "entity_id": {
+          "name": "Entity ID",
+          "description": "The entity to monitor for state changes"
+        },
+        "above": {
+          "name": "Above (seconds)",
+          "description": "Return true if time since last change is greater than this value"
+        },
+        "below": {
+          "name": "Below (seconds)",
+          "description": "Return true if time since last change is less than this value"
+        },
+        "equal_to": {
+          "name": "Equal to (seconds)",
+          "description": "Return true if time since last change equals this value"
+        }
+      }
+    }
   }
 }

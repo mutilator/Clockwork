@@ -1,0 +1,7 @@
+{
+  "conditions": {
+    "timespan": {
+      "condition": "mdi:clock-outline"
+    }
+  }
+}

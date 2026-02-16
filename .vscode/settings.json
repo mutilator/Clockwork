@@ -1,0 +1,20 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python",
+    "editor.formatOnSave": true
+  },
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/custom_components",
+    "${workspaceFolder}/venv/lib/python3.12/site-packages"
+  ],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none"
+  },
+  "codeql-scanner.github.owner": "mutilator",
+  "codeql-scanner.github.repo": "homeassistant-iqua-softener",
+  "codeQL.createQuery.qlPackLocation": "/mnt/h/projects/homeassistant-iqua-softener"
+}
