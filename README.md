@@ -24,7 +24,7 @@
 - **Month Detection**: Check if current date falls in specified months  
 - **Holiday Countdowns**: Built-in US holidays plus custom holiday support
 - **Date Range Checks**: Determine if current time is within or outside a range
-- **Custom Automation Conditions**: Duration-based conditions for automations (check how long since entity changed)
+- **Custom Automation Conditions**: Duration-based conditions for automations (check how long since entity changed or automation was last triggered)
 - **No YAML Required**: All configuration through intuitive Home Assistant UI
 - **Real-time Updates**: Configurable update intervals for time-based sensors
 - **Flexible Triggering**: Control which state changes trigger offset calculations

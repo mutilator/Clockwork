@@ -399,6 +399,28 @@
           "description": "Return true if time since last change equals this value"
         }
       }
+    },
+    "last_triggered": {
+      "name": "Clockwork Last Triggered",
+      "description": "Check how long it's been since an automation was last triggered",
+      "fields": {
+        "entity_id": {
+          "name": "Automation Entity",
+          "description": "The automation entity to monitor for last trigger time"
+        },
+        "above": {
+          "name": "Above (seconds)",
+          "description": "Return true if time since last trigger is greater than this value"
+        },
+        "below": {
+          "name": "Below (seconds)",
+          "description": "Return true if time since last trigger is less than this value"
+        },
+        "equal_to": {
+          "name": "Equal to (seconds)",
+          "description": "Return true if time since last trigger equals this value"
+        }
+      }
     }
   }
 }

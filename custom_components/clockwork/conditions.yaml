@@ -22,3 +22,29 @@ timespan:
           min: 0
           step: 1
           unit_of_measurement: seconds
+
+last_triggered:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          domain: automation
+    above:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: seconds
+    below:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: seconds
+    equal_to:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: seconds
