@@ -104,11 +104,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         except KeyError as e:
             raise HomeAssistantError(f"Missing parameter: {str(e)}")
 
-        calendar_entity = next(
-            (entity for entity in hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN, {}).get("entities", [])
-             if getattr(entity, "entity_id", None) == calendar_id),
-            None
-        )
+        entity_component = hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN)
+        calendar_entity = None
+        if entity_component:
+            calendar_entity = next(
+                (entity for entity in entity_component.entities
+                 if getattr(entity, "entity_id", None) == calendar_id),
+                None
+            )
 
         if calendar_entity is None:
             raise HomeAssistantError(f"Calendar entity {calendar_id} not found")
@@ -138,11 +141,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         except KeyError as e:
             raise HomeAssistantError(f"Missing parameter: {str(e)}")
 
-        calendar_entity = next(
-            (entity for entity in hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN, {}).get("entities", [])
-             if getattr(entity, "entity_id", None) == calendar_id),
-            None
-        )
+        entity_component = hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN)
+        calendar_entity = None
+        if entity_component:
+            calendar_entity = next(
+                (entity for entity in entity_component.entities
+                 if getattr(entity, "entity_id", None) == calendar_id),
+                None
+            )
 
         if calendar_entity is None:
             raise HomeAssistantError(f"Calendar entity {calendar_id} not found")
@@ -151,9 +157,36 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             raise HomeAssistantError("Calendar does not support updating events")
 
         try:
+            # Fetch existing event to merge updates with required fields
+            dt_start = dt_util.now() - datetime.timedelta(days=365)
+            dt_end = dt_util.now() + datetime.timedelta(days=365)
+            events = await calendar_entity.async_get_events(hass, dt_start, dt_end)
+            
+            existing_event = None
+            for event in events:
+                if event.uid == event_id:
+                    existing_event = event
+                    break
+            
+            if existing_event is None:
+                raise HomeAssistantError(f"Event {event_id} not found in calendar {calendar_id}")
+            
+            # Merge new event data with existing event data
+            # Convert existing event to dict for merging
+            merged_data = {
+                "dtstart": existing_event.start,
+                "dtend": existing_event.end,
+                "summary": existing_event.summary,
+                "description": existing_event.description,
+                "location": existing_event.location,
+            }
+            
+            # Update with provided event_data
+            merged_data.update(event_data)
+            
             await calendar_entity.async_update_event(
                 event_id,
-                event_data,
+                merged_data,
                 recurrence_id=recurrence_id,
                 recurrence_range=recurrence_range,
             )
@@ -171,11 +204,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         except KeyError as e:
             raise HomeAssistantError(f"Missing parameter: {str(e)}")
 
-        calendar_entity = next(
-            (entity for entity in hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN, {}).get("entities", [])
-             if getattr(entity, "entity_id", None) == calendar_id),
-            None
-        )
+        entity_component = hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN)
+        calendar_entity = None
+        if entity_component:
+            calendar_entity = next(
+                (entity for entity in entity_component.entities
+                 if getattr(entity, "entity_id", None) == calendar_id),
+                None
+            )
 
         if calendar_entity is None:
             raise HomeAssistantError(f"Calendar entity {calendar_id} not found")
