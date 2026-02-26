@@ -31,6 +31,7 @@ CALC_TYPE_EVENT_OFFSET = "event_offset"
 CALC_TYPE_BETWEEN_DATES = "between_dates"
 CALC_TYPE_OUTSIDE_DATES = "outside_dates"
 CALC_TYPE_DATE_RANGE = "date_range"
+CALC_TYPE_ATTRIBUTE = "attribute"
 
 # Platforms
 PLATFORMS = ["sensor", "binary_sensor"]

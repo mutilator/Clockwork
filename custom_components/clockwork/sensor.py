@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, CALC_TYPE_TIMESPAN, CALC_TYPE_HOLIDAY, CALC_TYPE_DATETIME_OFFSET, CALC_TYPE_DATE_RANGE
+from .const import DOMAIN, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, CALC_TYPE_TIMESPAN, CALC_TYPE_HOLIDAY, CALC_TYPE_DATETIME_OFFSET, CALC_TYPE_DATE_RANGE, CALC_TYPE_ATTRIBUTE
 from .utils import get_days_to_holiday, get_holidays, apply_offset_to_datetime, do_ranges_overlap, parse_datetime_or_date, get_holiday_date
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +42,8 @@ async def async_setup_entry(
             entities.append(ClockworkDateRangeSensor(calc, hass, config_entry))
         elif calc_type == CALC_TYPE_HOLIDAY:
             entities.append(ClockworkHolidaySensor(calc, hass, custom_holidays, config_entry))
+        elif calc_type == CALC_TYPE_ATTRIBUTE:
+            entities.append(ClockworkAttributeSensor(calc, hass, config_entry))
 
     # Create date sensors for holidays based on configuration
     if auto_create_holidays:
@@ -659,3 +661,99 @@ class ClockworkHolidayDateSensor(SensorEntity):
         """Clean up when entity is removed."""
         if self._remove_timer:
             self._remove_timer()
+
+
+class ClockworkAttributeSensor(SensorEntity):
+    """Sensor that monitors a specific attribute of an entity."""
+
+    def __init__(self, config: Dict[str, Any], hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+        """Initialize the attribute sensor."""
+        self._config = config
+        self.hass = hass
+        self._config_entry = config_entry
+        self._state = None
+        self._entity_id = config.get("entity_id")
+        self._attribute_name = config.get("attribute")
+        self._name = config.get("name", f"Attribute {self._attribute_name}")
+        self._remove_listener = None
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+        return self._name
+
+    @property
+    def unique_id(self) -> str:
+        """Return unique ID."""
+        return f"{DOMAIN}_{self._config_entry.entry_id}_{self._name.replace(' ', '_').lower()}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._config_entry.entry_id)},
+            name="Clockwork",
+            manufacturer="Clockwork",
+            model="Date/Time Calculator"
+        )
+
+    @property
+    def state(self) -> Optional[Any]:
+        """Return the state of the sensor."""
+        return self._state
+
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return self._config.get("icon", "mdi:information")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        attrs = dict(self._config)
+        attrs["attribute_name"] = self._attribute_name
+        # Add error info if source entity is missing
+        if not self.hass.states.get(self._entity_id):
+            attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
+        return attrs
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity about to be added to hass."""
+        @callback
+        def state_change_listener(event):
+            """Handle state changes."""
+            self._update_state()
+
+        self._remove_listener = async_track_state_change_event(
+            self.hass, [self._entity_id], state_change_listener
+        )
+
+        # Initial state
+        self._update_state()
+
+    @callback
+    def _update_state(self) -> None:
+        """Update the sensor state with the attribute value."""
+        try:
+            state = self.hass.states.get(self._entity_id)
+            if not state:
+                _LOGGER.warning(f"Entity '{self._entity_id}' not found")
+                self._state = None
+            else:
+                # Get the attribute value
+                attr_value = state.attributes.get(self._attribute_name)
+                if attr_value is None:
+                    _LOGGER.debug(f"Attribute '{self._attribute_name}' not found on entity '{self._entity_id}'")
+                    self._state = None
+                else:
+                    self._state = attr_value
+        except Exception as err:
+            _LOGGER.error(f"Error updating attribute sensor state for '{self._attribute_name}' on '{self._entity_id}': {err}")
+            self._state = None
+
+        self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up listeners."""
+        if self._remove_listener:
+            self._remove_listener()

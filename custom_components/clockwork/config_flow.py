@@ -24,6 +24,7 @@ from .const import (
     CALC_TYPE_HOLIDAY,
     CALC_TYPE_BETWEEN_DATES,
     CALC_TYPE_OUTSIDE_DATES,
+    CALC_TYPE_ATTRIBUTE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -113,6 +114,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             CALC_TYPE_HOLIDAY: [],  # No entity dependencies
             CALC_TYPE_BETWEEN_DATES: ["start_datetime_entity", "end_datetime_entity"],
             CALC_TYPE_OUTSIDE_DATES: ["start_datetime_entity", "end_datetime_entity"],
+            CALC_TYPE_ATTRIBUTE: ["entity_id"],
         }
         
         fields_to_check = entity_fields.get(calc_type, [])
@@ -234,6 +236,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 "holiday": "Holiday Countdown",
                 "between_dates": "Between Dates Check",
                 "outside_dates": "Outside Dates Check",
+                "attribute": "Attribute Monitor",
             },
         )
 
@@ -336,6 +339,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             return await self.async_step_modify_between_dates()
         elif calc_type == CALC_TYPE_OUTSIDE_DATES:
             return await self.async_step_modify_outside_dates()
+        elif calc_type == CALC_TYPE_ATTRIBUTE:
+            return await self.async_step_modify_attribute()
         else:
             return self.async_abort(reason="unsupported_calculation_type")
 
@@ -446,6 +451,105 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 "example": "e.g., 'binary_sensor.front_door'",
                 "track_state_help": "Select 'any' to track any state change, select a common state, or enter a custom value (e.g., 'cooling', 'heating')",
                 "update_interval_help": "How often to update the timespan value (in seconds). Minimum 1 second. Default: 60 seconds."
+            }
+        )
+
+    async def async_step_attribute(self, user_input: Optional[Dict[str, Any]] = None):
+        """Handle attribute monitor calculation."""
+        errors = {}
+        
+        # If we have user_input, build schema with preserved defaults
+        if user_input is not None:
+            data_schema = vol.Schema({
+                vol.Required("name", default=user_input.get("name", "")): str,
+                vol.Required("entity_id", default=user_input.get("entity_id", "")): selector.EntitySelector(),
+                vol.Required("attribute", default=user_input.get("attribute", "")): str,
+                vol.Optional("icon", default=user_input.get("icon", "")): str,
+            })
+        else:
+            data_schema = vol.Schema({
+                vol.Required("name"): str,
+                vol.Required("entity_id"): selector.EntitySelector(),
+                vol.Required("attribute"): str,
+                vol.Optional("icon"): str,
+            })
+        
+        if user_input is not None:
+            if not user_input.get("name"):
+                errors["base"] = "missing_name"
+            elif not user_input.get("entity_id"):
+                errors["base"] = "missing_entity_id"
+            elif not user_input.get("attribute"):
+                errors["base"] = "missing_attribute"
+            else:
+                # Validate that the referenced entity exists
+                is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_ATTRIBUTE, user_input)
+                if not is_valid:
+                    errors["entity_id"] = "entity_not_found"
+                    description_placeholder = {"error": error_msg}
+                    return self.async_show_form(
+                        step_id="attribute",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders=description_placeholder
+                    )
+                return await self._save_calculation(
+                    CALC_TYPE_ATTRIBUTE,
+                    user_input
+                )
+
+        return self.async_show_form(
+            step_id="attribute",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "entity_example": "e.g., 'climate.living_room'",
+                "attribute_example": "e.g., 'current_temperature', 'battery', 'humidity'"
+            }
+        )
+
+    async def async_step_modify_attribute(self, user_input: Optional[Dict[str, Any]] = None):
+        """Handle modifying an attribute monitor calculation."""
+        # Get existing calculation
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        existing_calc = calculations[self._selected_calc_index]
+        
+        errors = {}
+        
+        if user_input is not None:
+            if not user_input.get("name"):
+                errors["base"] = "missing_name"
+            elif not user_input.get("entity_id"):
+                errors["base"] = "missing_entity_id"
+            elif not user_input.get("attribute"):
+                errors["base"] = "missing_attribute"
+            else:
+                assert self._selected_calc_index is not None
+                return await self._update_calculation(
+                    self._selected_calc_index,
+                    CALC_TYPE_ATTRIBUTE,
+                    user_input
+                )
+
+        # Pre-populate with user_input if available (validation error case), otherwise existing_calc
+        defaults = user_input if user_input is not None else existing_calc
+        data_schema = vol.Schema({
+            vol.Required("name", default=defaults.get("name", "")): str,
+            vol.Required("entity_id", default=defaults.get("entity_id", "")): selector.EntitySelector(),
+            vol.Required("attribute", default=defaults.get("attribute", "")): str,
+            vol.Optional("icon", default=defaults.get("icon", "")): str,
+        })
+
+        return self.async_show_form(
+            step_id="modify_attribute",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "entity_example": "e.g., 'climate.living_room'",
+                "attribute_example": "e.g., 'current_temperature', 'battery', 'humidity'"
             }
         )
 

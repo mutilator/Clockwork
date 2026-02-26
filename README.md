@@ -20,6 +20,7 @@
 - **Offset Calculations**: Time-delayed triggers with pulse, duration, and latch modes
 - **Datetime Offset**: Apply time offsets to datetime entities for scheduling
 - **Date Range Duration**: Measure duration between two datetime entities
+- **Attribute Monitor**: Extract and expose entity attributes as dedicated sensors for automation and display
 - **Season Detection**: Detect current season automatically
 - **Month Detection**: Check if current date falls in specified months  
 - **Holiday Countdowns**: Built-in US holidays plus custom holiday support
@@ -42,6 +43,7 @@ For detailed guides and examples for each calculation type, visit the **[Clockwo
 | Offset Calculation | [Time-delayed triggers](https://github.com/mutilator/clockwork/wiki/Offset-Calculation) |
 | Datetime Offset | [Apply time offsets to datetime entities](https://github.com/mutilator/clockwork/wiki/Datetime-Offset) |
 | Date Range Duration | [Measure duration between dates](https://github.com/mutilator/clockwork/wiki/Date-Range-Duration) |
+| Attribute Monitor | [Extract and expose entity attributes](https://github.com/mutilator/clockwork/wiki/Attribute-Monitor) |
 | Season Detection | [Detect current season automatically](https://github.com/mutilator/clockwork/wiki/Season-Detection) |
 | Month Detection | [Check if current date is in specified months](https://github.com/mutilator/clockwork/wiki/Month-Detection) |
 | Holiday Countdown | [Days until next holiday](https://github.com/mutilator/clockwork/wiki/Holiday-Countdown) |

@@ -42,7 +42,8 @@
           "month": "Month Detection",
           "holiday": "Holiday Countdown",
           "between_dates": "Between Dates Check",
-          "outside_dates": "Outside Dates Check"
+          "outside_dates": "Outside Dates Check",
+          "attribute": "Attribute Monitor"
         }
       },
       "timespan": {
@@ -323,6 +324,32 @@
           "start_datetime_entity": "Start Datetime Entity",
           "end_datetime_entity": "End Datetime Entity",
           "icon": "Icon (optional)"
+        }
+      },
+      "attribute": {
+        "title": "Attribute Monitor",
+        "description": "Monitor a specific attribute on an entity and expose its value",
+        "data": {
+          "name": "Calculation Name",
+          "entity_id": "Entity to Monitor",
+          "attribute": "Attribute Name",
+          "icon": "Icon (optional)"
+        },
+        "data_description": {
+          "attribute": "The name of the attribute to monitor (e.g., 'current_temperature', 'battery', 'humidity')"
+        }
+      },
+      "modify_attribute": {
+        "title": "Modify Attribute Monitor",
+        "description": "Update the attribute monitor calculation",
+        "data": {
+          "name": "Calculation Name",
+          "entity_id": "Entity to Monitor",
+          "attribute": "Attribute Name",
+          "icon": "Icon (optional)"
+        },
+        "data_description": {
+          "attribute": "The name of the attribute to monitor (e.g., 'current_temperature', 'battery', 'humidity')"
         }
       },
       "settings": {
