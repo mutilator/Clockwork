@@ -24,7 +24,8 @@
 - **Month Detection**: Check if current date falls in specified months  
 - **Holiday Countdowns**: Built-in US holidays plus custom holiday support
 - **Date Range Checks**: Determine if current time is within or outside a range
-- **Custom Automation Conditions**: Duration-based conditions for automations (check how long since entity changed)
+- **Custom Automation Conditions**: Duration-based conditions for automations (check how long since entity changed or automation was last triggered)
+- **Calendar Services**: Get, update, and delete calendar events (requires calendar integration)
 - **No YAML Required**: All configuration through intuitive Home Assistant UI
 - **Real-time Updates**: Configurable update intervals for time-based sensors
 - **Flexible Triggering**: Control which state changes trigger offset calculations
@@ -48,6 +49,7 @@ For detailed guides and examples for each calculation type, visit the **[Clockwo
 | Between/Outside Dates | [Date range checks](https://github.com/mutilator/clockwork/wiki/Between-Dates-Check) |
 | Custom Automation Conditions | [Duration-based automation conditions](https://github.com/mutilator/clockwork/wiki/Custom-Automation-Conditions) |
 | Scan Automations | [Discover time-based automations](https://github.com/mutilator/clockwork/wiki/Scan-Automations) |
+| Calendar Services | [Manage calendar events](https://github.com/mutilator/clockwork/wiki/Calendar-Services) |
 
 ## Screenshots
 

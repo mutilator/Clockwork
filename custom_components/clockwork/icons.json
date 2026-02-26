@@ -2,6 +2,9 @@
   "conditions": {
     "timespan": {
       "condition": "mdi:clock-outline"
+    },
+    "last_triggered": {
+      "condition": "mdi:robot"
     }
   }
 }
