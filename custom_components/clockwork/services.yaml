@@ -1,3 +1,94 @@
 scan_automations:
   name: Scan Automations
   description: Scan all automations in Home Assistant for time/date patterns and identify potential Clockwork use cases
+
+delete_event:
+  name: Delete Event
+  description: Delete a single event from a calendar
+  fields:
+    calendar_id:
+      required: true
+      example: "calendar.my_calendar"
+      description: The entity ID of the calendar
+      selector:
+        entity:
+          domain: calendar
+    event_id:
+      required: true
+      example: "event_uid_12345"
+      description: The unique ID of the event to delete
+      selector:
+        text:
+    recurrence_id:
+      required: false
+      description: For recurring events, the specific instance to delete
+      selector:
+        text:
+    recurrence_range:
+      required: false
+      description: How to delete recurring events
+      selector:
+        select:
+          options:
+            - THIS
+            - THIS_AND_FUTURE
+
+update_event:
+  name: Update Event
+  description: Update an existing event in a calendar
+  fields:
+    calendar_id:
+      required: true
+      example: "calendar.my_calendar"
+      description: The entity ID of the calendar
+      selector:
+        entity:
+          domain: calendar
+    event_id:
+      required: true
+      example: "event_uid_12345"
+      description: The unique ID of the event to update
+      selector:
+        text:
+    event:
+      required: true
+      description: Event data to update (e.g., summary, description, location, start, end)
+      selector:
+        object:
+    recurrence_id:
+      required: false
+      description: For recurring events, the specific instance to update
+      selector:
+        text:
+    recurrence_range:
+      required: false
+      description: How to update recurring events
+      selector:
+        select:
+          options:
+            - THIS
+            - THIS_AND_FUTURE
+
+delete_events_in_range:
+  name: Delete Events in Range
+  description: Delete all events within a specified date range
+  fields:
+    calendar_id:
+      required: true
+      example: "calendar.my_calendar"
+      description: The entity ID of the calendar
+      selector:
+        entity:
+          domain: calendar
+    start_date:
+      required: true
+      example: "2024-02-26"
+      description: Start date for the range
+      selector:
+        date:
+    end_date:
+      required: true
+      example: "2024-02-28"
+      description: End date for the range
+      selector:
+        date:

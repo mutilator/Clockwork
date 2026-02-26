@@ -1,14 +1,25 @@
 """Clockwork integration for Home Assistant."""
 import logging
 import json
+import datetime
+import dataclasses
 from pathlib import Path
+from collections.abc import Iterable
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.const import Platform
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.service import async_register_admin_service
+from homeassistant.components.calendar import CalendarEntity, CalendarEntityFeature
+from homeassistant.components.calendar.const import DOMAIN as CALENDAR_DOMAIN
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
+from homeassistant.util.json import JsonValueType
+from homeassistant.core import ServiceResponse, SupportsResponse
 
 from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, SERVICE_SCAN_AUTOMATIONS
 from .diagnostics import async_get_config_entry_diagnostics
@@ -16,11 +27,42 @@ from .utils import scan_automations_for_time_usage
 
 _LOGGER = logging.getLogger(__name__)
 
+# Service constants for calendar operations
+SERVICE_GET_EVENTS = "get_events"
+SERVICE_DELETE_EVENT = "delete_event"
+SERVICE_UPDATE_EVENT = "update_event"
+SERVICE_DELETE_EVENTS_IN_RANGE = "delete_events_in_range"
+
+CONF_CALENDAR_ID = "calendar_id"
+CONF_EVENT_ID = "event_id"
+CONF_START_DATE = "start_date"
+CONF_END_DATE = "end_date"
+CONF_RECURRENCE_ID = "recurrence_id"
+CONF_RECURRENCE_RANGE = "recurrence_range"
+
 # Import condition module to register automation conditions (only if platform is available)
 try:
     from . import condition  # noqa: F401
 except ImportError:
     _LOGGER.debug("Automation condition platform not available in this Home Assistant version")
+
+
+def _list_events_dict_factory(
+    obj: Iterable[tuple[str, Any]],
+) -> dict[str, JsonValueType]:
+    """Convert CalendarEvent dataclass items to dictionary of attributes."""
+    result: dict[str, str] = {}
+    for name, value in obj:
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            result[name] = value.isoformat()
+        elif value is not None:
+            result[name] = str(value)
+    
+    # Filter to keep only important fields
+    return {
+        k: v for k, v in result.items() 
+        if k in {"start", "end", "summary", "description", "location", "uid", "recurrence_id", "recurrence_range"}
+    }
 
 
 def _load_json_file(filename: str) -> dict:
@@ -50,6 +92,158 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         _LOGGER.info(f"Clockwork CONDITION_SCHEMA available: {hasattr(condition_module, 'CONDITION_SCHEMA')}")
     except Exception as err:
         _LOGGER.error(f"Error loading Clockwork condition module: {err}", exc_info=True)
+    
+    # Register calendar services
+    async def async_delete_event(call: ServiceCall) -> None:
+        """Delete a calendar event."""
+        try:
+            calendar_id = call.data[CONF_CALENDAR_ID]
+            event_id = call.data[CONF_EVENT_ID]
+            recurrence_id = call.data.get(CONF_RECURRENCE_ID)
+            recurrence_range = call.data.get(CONF_RECURRENCE_RANGE)
+        except KeyError as e:
+            raise HomeAssistantError(f"Missing parameter: {str(e)}")
+
+        calendar_entity = next(
+            (entity for entity in hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN, {}).get("entities", [])
+             if getattr(entity, "entity_id", None) == calendar_id),
+            None
+        )
+
+        if calendar_entity is None:
+            raise HomeAssistantError(f"Calendar entity {calendar_id} not found")
+
+        if not calendar_entity.supported_features or not calendar_entity.supported_features & CalendarEntityFeature.DELETE_EVENT:
+            raise HomeAssistantError("Calendar does not support deleting events")
+
+        try:
+            await calendar_entity.async_delete_event(
+                event_id,
+                recurrence_id=recurrence_id,
+                recurrence_range=recurrence_range,
+            )
+            _LOGGER.info("Event %s deleted", event_id)
+        except Exception as e:
+            _LOGGER.error("Error deleting event: %s", e)
+            raise HomeAssistantError(f"Failed to delete event: {str(e)}")
+
+    async def async_update_event(call: ServiceCall) -> None:
+        """Update a calendar event."""
+        try:
+            calendar_id = call.data[CONF_CALENDAR_ID]
+            event_id = call.data[CONF_EVENT_ID]
+            event_data = call.data.get("event", {})
+            recurrence_id = call.data.get(CONF_RECURRENCE_ID)
+            recurrence_range = call.data.get(CONF_RECURRENCE_RANGE)
+        except KeyError as e:
+            raise HomeAssistantError(f"Missing parameter: {str(e)}")
+
+        calendar_entity = next(
+            (entity for entity in hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN, {}).get("entities", [])
+             if getattr(entity, "entity_id", None) == calendar_id),
+            None
+        )
+
+        if calendar_entity is None:
+            raise HomeAssistantError(f"Calendar entity {calendar_id} not found")
+
+        if not calendar_entity.supported_features or not calendar_entity.supported_features & CalendarEntityFeature.UPDATE_EVENT:
+            raise HomeAssistantError("Calendar does not support updating events")
+
+        try:
+            await calendar_entity.async_update_event(
+                event_id,
+                event_data,
+                recurrence_id=recurrence_id,
+                recurrence_range=recurrence_range,
+            )
+            _LOGGER.info("Event %s updated", event_id)
+        except Exception as e:
+            _LOGGER.error("Error updating event: %s", e)
+            raise HomeAssistantError(f"Failed to update event: {str(e)}")
+
+    async def async_delete_events_in_range(call: ServiceCall) -> None:
+        """Delete all events within a date range."""
+        try:
+            calendar_id = call.data[CONF_CALENDAR_ID]
+            start_date = dt_util.as_local(datetime.datetime.fromisoformat(call.data[CONF_START_DATE])).date()
+            end_date = dt_util.as_local(datetime.datetime.fromisoformat(call.data[CONF_END_DATE])).date()
+        except KeyError as e:
+            raise HomeAssistantError(f"Missing parameter: {str(e)}")
+
+        calendar_entity = next(
+            (entity for entity in hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN, {}).get("entities", [])
+             if getattr(entity, "entity_id", None) == calendar_id),
+            None
+        )
+
+        if calendar_entity is None:
+            raise HomeAssistantError(f"Calendar entity {calendar_id} not found")
+
+        if not calendar_entity.supported_features or not calendar_entity.supported_features & CalendarEntityFeature.DELETE_EVENT:
+            raise HomeAssistantError("Calendar does not support deleting events")
+
+        try:
+            dt_start = dt_util.as_local(datetime.datetime.combine(start_date, datetime.time.min))
+            dt_end = dt_util.as_local(datetime.datetime.combine(end_date + datetime.timedelta(days=1), datetime.time.min))
+            events = await calendar_entity.async_get_events(hass, dt_start, dt_end)
+            deleted_count = 0
+
+            for event in events:
+                event_start = event.start
+                event_end = event.end
+
+                if isinstance(event_start, datetime.datetime):
+                    event_start_date = event_start.date()
+                else:
+                    event_start_date = event_start
+
+                if isinstance(event_end, datetime.datetime):
+                    event_end_date = event_end.date()
+                    if event_end.hour == 0 and event_end.minute == 0 and event_end.second == 0:
+                        event_end_date = (event_end - datetime.timedelta(days=1)).date()
+                else:
+                    event_end_date = event_end - datetime.timedelta(days=1)
+
+                if event_end_date < start_date or event_start_date > end_date:
+                    continue
+
+                try:
+                    await calendar_entity.async_delete_event(event.uid)
+                    _LOGGER.info("Event %s deleted", event.uid)
+                    deleted_count += 1
+                except Exception as event_error:
+                    _LOGGER.warning("Could not delete event %s: %s", event.uid, event_error)
+
+            _LOGGER.info("Deleted %d events in range", deleted_count)
+        except Exception as e:
+            _LOGGER.error("Error deleting events in range: %s", e)
+            raise HomeAssistantError(f"Failed to delete events: {str(e)}")
+
+    # Register the services
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_DELETE_EVENT,
+        async_delete_event,
+        schema=None
+    )
+    
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_UPDATE_EVENT,
+        async_update_event,
+        schema=None
+    )
+    
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_DELETE_EVENTS_IN_RANGE,
+        async_delete_events_in_range,
+        schema=None
+    )
     
     return True
 
