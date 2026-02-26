@@ -100,7 +100,7 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
         """Return extra state attributes."""
         attrs = dict(self._config)
         # Add error info if source entity is missing
-        if not self.hass.states.get(self._entity_id):
+        if self._entity_id and not self.hass.states.get(self._entity_id):
             attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
         return attrs
 
@@ -134,7 +134,7 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
                     self.async_write_ha_state()
 
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._entity_id], state_change_listener
+            self.hass, [self._entity_id] if self._entity_id else [], state_change_listener
         )
 
         # Check periodically
@@ -413,9 +413,9 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
         """Return extra state attributes."""
         attrs = dict(self._config)
         # Add error info if required entities are missing
-        if not self.hass.states.get(self._start_datetime_entity):
+        if self._start_datetime_entity and not self.hass.states.get(self._start_datetime_entity):
             attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
-        elif not self.hass.states.get(self._end_datetime_entity):
+        elif self._end_datetime_entity and not self.hass.states.get(self._end_datetime_entity):
             attrs["_error"] = f"End datetime entity '{self._end_datetime_entity}' not found. It may have been deleted or renamed."
         return attrs
 
@@ -427,8 +427,9 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
             self._update_state()
 
         # Listen to both entities
+        entity_ids = [e for e in [self._start_datetime_entity, self._end_datetime_entity] if e]
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._start_datetime_entity, self._end_datetime_entity], datetime_change_listener
+            self.hass, entity_ids, datetime_change_listener
         )
 
         # Check periodically (every minute)
@@ -446,8 +447,8 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         try:
-            start_state = self.hass.states.get(self._start_datetime_entity)
-            end_state = self.hass.states.get(self._end_datetime_entity)
+            start_state = self.hass.states.get(self._start_datetime_entity) if self._start_datetime_entity else None
+            end_state = self.hass.states.get(self._end_datetime_entity) if self._end_datetime_entity else None
 
             _LOGGER.debug(f"Between Dates '{self.name}' - Start entity state: {start_state}")
             _LOGGER.debug(f"Between Dates '{self.name}' - End entity state: {end_state}")
@@ -551,9 +552,9 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
         """Return extra state attributes."""
         attrs = dict(self._config)
         # Add error info if required entities are missing
-        if not self.hass.states.get(self._start_datetime_entity):
+        if self._start_datetime_entity and not self.hass.states.get(self._start_datetime_entity):
             attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
-        elif not self.hass.states.get(self._end_datetime_entity):
+        elif self._end_datetime_entity and not self.hass.states.get(self._end_datetime_entity):
             attrs["_error"] = f"End datetime entity '{self._end_datetime_entity}' not found. It may have been deleted or renamed."
         return attrs
 
@@ -565,8 +566,9 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
             self._update_state()
 
         # Listen to both entities
+        entity_ids = [e for e in [self._start_datetime_entity, self._end_datetime_entity] if e]
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._start_datetime_entity, self._end_datetime_entity], datetime_change_listener
+            self.hass, entity_ids, datetime_change_listener
         )
 
         # Check periodically (every minute)
@@ -584,8 +586,8 @@ class ClockworkOutsideDatesSensor(BinarySensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         try:
-            start_state = self.hass.states.get(self._start_datetime_entity)
-            end_state = self.hass.states.get(self._end_datetime_entity)
+            start_state = self.hass.states.get(self._start_datetime_entity) if self._start_datetime_entity else None
+            end_state = self.hass.states.get(self._end_datetime_entity) if self._end_datetime_entity else None
 
             if not start_state:
                 _LOGGER.warning(f"Outside Dates '{self.name}' - Start datetime entity '{self._start_datetime_entity}' not found")

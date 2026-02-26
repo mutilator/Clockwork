@@ -382,7 +382,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_TIMESPAN, user_input)
                 if not is_valid:
                     errors["entity_id"] = "entity_not_found"
-                    description_placeholder = {"error": error_msg}
+                    description_placeholder = {"error": error_msg or "Entity not found"}
                     return self.async_show_form(
                         step_id="timespan",
                         data_schema=data_schema,
@@ -486,7 +486,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_ATTRIBUTE, user_input)
                 if not is_valid:
                     errors["entity_id"] = "entity_not_found"
-                    description_placeholder = {"error": error_msg}
+                    description_placeholder = {"error": error_msg or "Entity not found"}
                     return self.async_show_form(
                         step_id="attribute",
                         data_schema=data_schema,
@@ -609,7 +609,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_OFFSET, user_input)
                     if not is_valid:
                         errors["entity_id"] = "entity_not_found"
-                        description_placeholder = {"error": error_msg}
+                        description_placeholder = {"error": error_msg or "Entity not found"}
                         return self.async_show_form(
                             step_id="offset",
                             data_schema=data_schema,
@@ -671,7 +671,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                     is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_DATETIME_OFFSET, user_input)
                     if not is_valid:
                         errors["datetime_entity"] = "entity_not_found"
-                        description_placeholder = {"error": error_msg}
+                        description_placeholder = {"error": error_msg or "Entity not found"}
                         return self.async_show_form(
                             step_id="datetime_offset",
                             data_schema=data_schema,
@@ -744,7 +744,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_DATE_RANGE, user_input)
                 if not is_valid:
                     errors["base"] = "entity_not_found"
-                    description_placeholder = {"error": error_msg}
+                    description_placeholder = {"error": error_msg or "Entity not found"}
                     return self.async_show_form(
                         step_id="date_range",
                         data_schema=data_schema,
@@ -962,7 +962,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_BETWEEN_DATES, user_input)
                 if not is_valid:
                     errors["base"] = "entity_not_found"
-                    description_placeholder = {"error": error_msg}
+                    description_placeholder = {"error": error_msg or "Entity not found"}
                     return self.async_show_form(
                         step_id="between_dates",
                         data_schema=data_schema,
@@ -1042,7 +1042,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 is_valid, error_msg = self._validate_entities_exist(CALC_TYPE_OUTSIDE_DATES, user_input)
                 if not is_valid:
                     errors["base"] = "entity_not_found"
-                    description_placeholder = {"error": error_msg}
+                    description_placeholder = {"error": error_msg or "Entity not found"}
                     return self.async_show_form(
                         step_id="outside_dates",
                         data_schema=data_schema,
@@ -1123,11 +1123,11 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         defaults = user_input if user_input else {}
         
         # Build field dict, only adding defaults for optional fields if they have values
-        schema_dict = {
+        schema_dict: dict = cast(dict, {
             vol.Required("name", default=defaults.get("name", "")): str,
             vol.Required("holiday_type", default=defaults.get("holiday_type")): vol.In(["fixed", "nth_weekday", "last_weekday"]),
             vol.Required("month", default=defaults.get("month")): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
-        }
+        })
         
         # Add optional fields only with defaults if they have values
         if "day" in defaults and defaults.get("day") is not None:
@@ -1240,11 +1240,11 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         defaults = user_input if (user_input and errors) else (user_input if user_input else existing_holiday)
         
         # Build field dict, only adding defaults for optional fields if they have values
-        schema_dict = {
+        schema_dict: dict = cast(dict, {
             vol.Required("name", default=defaults.get("name", "")): str,
             vol.Required("holiday_type", default=defaults.get("holiday_type", defaults.get("type", "fixed"))): vol.In(["fixed", "nth_weekday", "last_weekday"]),
             vol.Required("month", default=defaults.get("month", 1)): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
-        }
+        })
         
         # Add optional fields only with defaults if they have values
         if "day" in defaults and defaults.get("day") is not None:

@@ -44,7 +44,8 @@ class TimespanCondition(Condition):
 
     def __init__(self, hass: HomeAssistant, config: ConfigType) -> None:
         """Initialize the condition."""
-        super().__init__(hass, config)
+        # Config may be ConfigType or ConditionConfig, cast to dict for parent class
+        super().__init__(hass, dict(config) if not isinstance(config, dict) else config)  # type: ignore
         self.config = config
         _LOGGER.debug(f"[TIMESPAN] __init__ called with config: {config}")
 
@@ -104,6 +105,9 @@ class TimespanCondition(Condition):
             _LOGGER.debug(f"[TIMESPAN] Evaluating condition for entity_id: {entity_id}")
             
             try:
+                if not entity_id or not isinstance(entity_id, str):
+                    _LOGGER.warning(f"Invalid entity_id in timespan condition: {entity_id}")
+                    return False
                 state = self._hass.states.get(entity_id)
                 if state is None:
                     _LOGGER.warning(f"Clockwork timespan condition: Entity '{entity_id}' not found")

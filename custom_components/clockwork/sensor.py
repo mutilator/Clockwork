@@ -108,7 +108,7 @@ class ClockworkTimespanSensor(SensorEntity):
     @property
     def state(self) -> Optional[str]:
         """Return the state of the sensor."""
-        return self._state
+        return str(self._state) if self._state is not None else None
 
     @property
     def unit_of_measurement(self) -> str:
@@ -131,12 +131,16 @@ class ClockworkTimespanSensor(SensorEntity):
         attrs = dict(self._config)
         attrs["device_class"] = self.device_class
         # Add error info if source entity is missing
-        if not self.hass.states.get(self._entity_id):
+        if self._entity_id and not self.hass.states.get(self._entity_id):
             attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
         return attrs
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
+        if not self._entity_id:
+            _LOGGER.error("No entity_id configured for timespan sensor")
+            return
+
         @callback
         def state_change_listener(event):
             """Handle state changes."""
@@ -158,12 +162,14 @@ class ClockworkTimespanSensor(SensorEntity):
                     self._last_change = None
             self._update_state()
 
+        # ensure we only pass real entity ids (no None) to the helper
+        entity_ids = [self._entity_id] if self._entity_id else []
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._entity_id], state_change_listener
+            self.hass, entity_ids, state_change_listener
         )
 
         # Initial state - get the last_changed time from the state object
-        state = self.hass.states.get(self._entity_id)
+        state = self.hass.states.get(self._entity_id) if self._entity_id else None
         if state:
             # Check if current state matches tracked state
             state_matches = False
@@ -272,9 +278,9 @@ class ClockworkDateRangeSensor(SensorEntity):
         attrs = dict(self._config)
         attrs["device_class"] = self.device_class
         # Add error info if required entities are missing
-        if not self.hass.states.get(self._start_datetime_entity):
+        if not self._start_datetime_entity or not self.hass.states.get(self._start_datetime_entity):
             attrs["_error"] = f"Start datetime entity '{self._start_datetime_entity}' not found. It may have been deleted or renamed."
-        elif not self.hass.states.get(self._end_datetime_entity):
+        elif not self._end_datetime_entity or not self.hass.states.get(self._end_datetime_entity):
             attrs["_error"] = f"End datetime entity '{self._end_datetime_entity}' not found. It may have been deleted or renamed."
         return attrs
 
@@ -285,8 +291,12 @@ class ClockworkDateRangeSensor(SensorEntity):
             """Handle datetime entity state changes."""
             self._update_state()
 
+        # only track entities that actually exist (filter out None)
+        entity_ids = [
+            eid for eid in (self._start_datetime_entity, self._end_datetime_entity) if eid
+        ]
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._start_datetime_entity, self._end_datetime_entity], datetime_change_listener
+            self.hass, entity_ids, datetime_change_listener
         )
 
         # Initial state
@@ -296,8 +306,8 @@ class ClockworkDateRangeSensor(SensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         try:
-            start_state = self.hass.states.get(self._start_datetime_entity)
-            end_state = self.hass.states.get(self._end_datetime_entity)
+            start_state = self.hass.states.get(self._start_datetime_entity) if self._start_datetime_entity else None
+            end_state = self.hass.states.get(self._end_datetime_entity) if self._end_datetime_entity else None
 
             if not start_state:
                 _LOGGER.warning(f"Start datetime entity '{self._start_datetime_entity}' not found")
@@ -452,7 +462,8 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
         self.hass = hass
         self._config_entry = config_entry
         self._state = None
-        self._datetime_entity = config.get("datetime_entity")
+        # entity ids may be None so type them accordingly
+        self._datetime_entity: Optional[str] = config.get("datetime_entity")
         self._offset_str = config.get("offset", "0")
         self._remove_listener = None
 
@@ -497,7 +508,7 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
         attrs = dict(self._config)
         attrs["device_class"] = self.device_class
         # Add error info if source entity is missing
-        if not self.hass.states.get(self._datetime_entity):
+        if self._datetime_entity and not self.hass.states.get(self._datetime_entity):
             attrs["_error"] = f"Datetime entity '{self._datetime_entity}' not found. It may have been deleted or renamed."
         return attrs
 
@@ -508,8 +519,9 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
             """Handle datetime entity state changes."""
             self._update_state()
 
+        entity_ids = [self._datetime_entity] if self._datetime_entity else []
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._datetime_entity], datetime_change_listener
+            self.hass, entity_ids, datetime_change_listener
         )
 
         # Initial state
@@ -519,7 +531,7 @@ class ClockworkDatetimeOffsetSensor(SensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state."""
         try:
-            state = self.hass.states.get(self._datetime_entity)
+            state = self.hass.states.get(self._datetime_entity) if self._datetime_entity else None
             if not state:
                 _LOGGER.warning(f"Datetime entity '{self._datetime_entity}' not found")
                 self._state = None
@@ -713,7 +725,7 @@ class ClockworkAttributeSensor(SensorEntity):
         attrs = dict(self._config)
         attrs["attribute_name"] = self._attribute_name
         # Add error info if source entity is missing
-        if not self.hass.states.get(self._entity_id):
+        if self._entity_id and not self.hass.states.get(self._entity_id):
             attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
         return attrs
 
@@ -724,8 +736,9 @@ class ClockworkAttributeSensor(SensorEntity):
             """Handle state changes."""
             self._update_state()
 
+        entity_ids = [self._entity_id] if self._entity_id else []
         self._remove_listener = async_track_state_change_event(
-            self.hass, [self._entity_id], state_change_listener
+            self.hass, entity_ids, state_change_listener
         )
 
         # Initial state
@@ -735,13 +748,13 @@ class ClockworkAttributeSensor(SensorEntity):
     def _update_state(self) -> None:
         """Update the sensor state with the attribute value."""
         try:
-            state = self.hass.states.get(self._entity_id)
+            state = self.hass.states.get(self._entity_id) if self._entity_id else None
             if not state:
                 _LOGGER.warning(f"Entity '{self._entity_id}' not found")
                 self._state = None
             else:
                 # Get the attribute value
-                attr_value = state.attributes.get(self._attribute_name)
+                attr_value = state.attributes.get(self._attribute_name) if self._attribute_name else None
                 if attr_value is None:
                     _LOGGER.debug(f"Attribute '{self._attribute_name}' not found on entity '{self._entity_id}'")
                     self._state = None

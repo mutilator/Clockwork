@@ -14,8 +14,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.service import async_register_admin_service
-from homeassistant.components.calendar import CalendarEntity, CalendarEntityFeature
-from homeassistant.components.calendar.const import DOMAIN as CALENDAR_DOMAIN
+from homeassistant.components.calendar import CalendarEntity
+from homeassistant.components.calendar.const import DOMAIN as CALENDAR_DOMAIN, CalendarEntityFeature
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from homeassistant.util.json import JsonValueType
@@ -262,7 +262,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         SERVICE_DELETE_EVENT,
         async_delete_event,
-        schema=None
     )
     
     async_register_admin_service(
@@ -270,7 +269,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         SERVICE_UPDATE_EVENT,
         async_update_event,
-        schema=None
     )
     
     async_register_admin_service(
@@ -278,7 +276,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         SERVICE_DELETE_EVENTS_IN_RANGE,
         async_delete_events_in_range,
-        schema=None
     )
     
     return True
@@ -401,7 +398,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN,
         SERVICE_SCAN_AUTOMATIONS,
         handle_scan_automations,
-        supports_response="only"  # This service returns data
+        supports_response=SupportsResponse.ONLY  # This service returns data
     )
 
     return True

@@ -45,7 +45,8 @@ class LastTriggeredCondition(Condition):
 
     def __init__(self, hass: HomeAssistant, config: ConfigType) -> None:
         """Initialize the condition."""
-        super().__init__(hass, config)
+        # Config may be ConfigType or ConditionConfig, cast to dict for parent class
+        super().__init__(hass, dict(config) if not isinstance(config, dict) else config)  # type: ignore
         self.config = config
         _LOGGER.debug(f"[LAST_TRIGGERED] __init__ called with config: {config}")
 
@@ -105,6 +106,9 @@ class LastTriggeredCondition(Condition):
             _LOGGER.debug(f"[LAST_TRIGGERED] Evaluating condition for entity_id: {entity_id}")
 
             try:
+                if not entity_id or not isinstance(entity_id, str):
+                    _LOGGER.warning(f"Invalid entity_id in last_triggered condition: {entity_id}")
+                    return False
                 state = self._hass.states.get(entity_id)
                 if state is None:
                     _LOGGER.warning(f"Clockwork last_triggered condition: Entity '{entity_id}' not found")
