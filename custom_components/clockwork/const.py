@@ -7,6 +7,19 @@ CONF_AUTO_CREATE_HOLIDAYS = "auto_create_holidays"
 # Services
 SERVICE_SCAN_AUTOMATIONS = "scan_automations"
 
+# Common states for timespan tracking
+COMMON_STATES = [
+    "on",
+    "off",
+    "cooling",
+    "heating",
+    "idle",
+    "active",
+    "armed",
+    "disarmed",
+    "unavailable",
+]
+
 # Calculation types
 CALC_TYPE_TIMESPAN = "timespan"
 CALC_TYPE_OFFSET = "offset"

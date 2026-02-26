@@ -142,7 +142,7 @@ class ClockworkTimespanSensor(SensorEntity):
             if new_state:
                 # Check if we should track this state change
                 state_matches = False
-                if self._track_state == "both":
+                if self._track_state == "any":
                     # Track any state change
                     state_matches = True
                 elif new_state.state == self._track_state:
@@ -165,7 +165,7 @@ class ClockworkTimespanSensor(SensorEntity):
         if state:
             # Check if current state matches tracked state
             state_matches = False
-            if self._track_state == "both":
+            if self._track_state == "any":
                 # Track any state change
                 state_matches = True
             elif state.state == self._track_state:

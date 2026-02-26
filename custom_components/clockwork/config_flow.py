@@ -14,6 +14,7 @@ from .const import (
     DOMAIN, 
     CONF_CALCULATIONS,
     CONF_AUTO_CREATE_HOLIDAYS,
+    COMMON_STATES,
     CALC_TYPE_TIMESPAN,
     CALC_TYPE_OFFSET,
     CALC_TYPE_DATETIME_OFFSET,
@@ -347,7 +348,9 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema = vol.Schema({
                 vol.Required("name", default=user_input.get("name", "")): str,
                 vol.Required("entity_id", default=user_input.get("entity_id", "")): selector.EntitySelector(),
-                vol.Optional("track_state", default=user_input.get("track_state", "on")): vol.In(["on", "off", "both"]),
+                vol.Optional("track_state", default=user_input.get("track_state", "on")): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=["any"] + COMMON_STATES, custom_value=True)
+                ),
                 vol.Optional("update_interval", default=user_input.get("update_interval", 60)): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional("icon", default=user_input.get("icon", "")): str,
             })
@@ -355,7 +358,9 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema = vol.Schema({
                 vol.Required("name"): str,
                 vol.Required("entity_id"): selector.EntitySelector(),
-                vol.Optional("track_state", default="on"): vol.In(["on", "off", "both"]),
+                vol.Optional("track_state", default="on"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=["any"] + COMMON_STATES, custom_value=True)
+                ),
                 vol.Optional("update_interval", default=60): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional("icon"): str,
             })
@@ -390,7 +395,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={
                 "example": "e.g., 'binary_sensor.front_door'",
-                "track_state_help": "Which state to track: 'on' (turns ON), 'off' (turns OFF), or 'both' (any state change)",
+                "track_state_help": "Select 'any' to track any state change, select a common state, or enter a custom value (e.g., 'cooling', 'heating')",
                 "update_interval_help": "How often to update the timespan value (in seconds). Minimum 1 second. Default: 60 seconds."
             }
         )
@@ -426,7 +431,9 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         data_schema = vol.Schema({
             vol.Required("name", default=defaults.get("name", "")): str,
             vol.Required("entity_id", default=defaults.get("entity_id", "")): selector.EntitySelector(),
-            vol.Optional("track_state", default=defaults.get("track_state", "on")): vol.In(["on", "off", "both"]),
+            vol.Optional("track_state", default=defaults.get("track_state", "on")): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=["any"] + COMMON_STATES, custom_value=True)
+            ),
             vol.Optional("update_interval", default=defaults.get("update_interval", 60)): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Optional("icon", default=defaults.get("icon", "")): str,
         })
@@ -437,7 +444,7 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={
                 "example": "e.g., 'binary_sensor.front_door'",
-                "track_state_help": "Which state to track: 'on' (turns ON), 'off' (turns OFF), or 'both' (any state change)",
+                "track_state_help": "Select 'any' to track any state change, select a common state, or enter a custom value (e.g., 'cooling', 'heating')",
                 "update_interval_help": "How often to update the timespan value (in seconds). Minimum 1 second. Default: 60 seconds."
             }
         )

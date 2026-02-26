@@ -56,7 +56,7 @@
           "icon": "Icon (optional)"
         },
         "data_description": {
-          "track_state": "Which state to track: 'on' (turns ON), 'off' (turns OFF), or 'both' (any state change)",
+          "track_state": "Select 'any' to track any state change, select a common state (on, off, cooling, heating, etc.), or enter a custom value for your entity",
           "update_interval": "How often to update the timespan value (in seconds). Minimum 1 second. Default: 60 seconds."
         }
       },
@@ -226,7 +226,7 @@
           "icon": "Icon (optional)"
         },
         "data_description": {
-          "track_state": "Which state to track: 'on' (turns ON), 'off' (turns OFF), or 'both' (any state change)",
+          "track_state": "Select 'any' to track any state change, select a common state (on, off, cooling, heating, etc.), or enter a custom value for your entity",
           "update_interval": "How often to update the timespan value (in seconds). Minimum 1 second. Default: 60 seconds."
         }
       },
