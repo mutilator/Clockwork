@@ -45,8 +45,7 @@ class LastTriggeredCondition(Condition):
 
     def __init__(self, hass: HomeAssistant, config: ConfigType) -> None:
         """Initialize the condition."""
-        # Config may be ConfigType or ConditionConfig, cast to dict for parent class
-        super().__init__(hass, dict(config) if not isinstance(config, dict) else config)  # type: ignore
+        self._hass = hass
         self.config = config
         _LOGGER.debug(f"[LAST_TRIGGERED] __init__ called with config: {config}")
 
