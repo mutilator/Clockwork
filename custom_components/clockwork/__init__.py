@@ -13,7 +13,6 @@ from homeassistant.const import Platform
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.components.calendar import CalendarEntity
 from homeassistant.components.calendar.const import DOMAIN as CALENDAR_DOMAIN, CalendarEntityFeature
 from homeassistant.exceptions import HomeAssistantError
@@ -256,23 +255,20 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             _LOGGER.error("Error deleting events in range: %s", e)
             raise HomeAssistantError(f"Failed to delete events: {str(e)}")
 
-    # Register the services
-    async_register_admin_service(
-        hass,
+    # Register the services (allow non-admins to call)
+    hass.services.async_register(
         DOMAIN,
         SERVICE_DELETE_EVENT,
         async_delete_event,
     )
     
-    async_register_admin_service(
-        hass,
+    hass.services.async_register(
         DOMAIN,
         SERVICE_UPDATE_EVENT,
         async_update_event,
     )
     
-    async_register_admin_service(
-        hass,
+    hass.services.async_register(
         DOMAIN,
         SERVICE_DELETE_EVENTS_IN_RANGE,
         async_delete_events_in_range,
