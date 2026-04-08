@@ -1122,28 +1122,16 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         # Build schema with defaults from user_input for repopulation on error
         defaults = user_input if user_input else {}
         
-        # Build field dict, only adding defaults for optional fields if they have values
+        # Build field dict, defaulting selector fields to the displayed slider starting values
         schema_dict: dict = cast(dict, {
             vol.Required("name", default=defaults.get("name", "")): str,
-            vol.Required("holiday_type", default=defaults.get("holiday_type")): vol.In(["fixed", "nth_weekday", "last_weekday"]),
-            vol.Required("month", default=defaults.get("month")): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+            vol.Required("holiday_type", default=defaults.get("holiday_type", "fixed")): vol.In(["fixed", "nth_weekday", "last_weekday"]),
+            vol.Required("month", default=defaults.get("month", 1)): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
         })
         
-        # Add optional fields only with defaults if they have values
-        if "day" in defaults and defaults.get("day") is not None:
-            schema_dict[vol.Optional("day", default=defaults["day"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
-        else:
-            schema_dict[vol.Optional("day")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
-        
-        if "occurrence" in defaults and defaults.get("occurrence") is not None:
-            schema_dict[vol.Optional("occurrence", default=defaults["occurrence"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
-        else:
-            schema_dict[vol.Optional("occurrence")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
-        
-        if "weekday" in defaults and defaults.get("weekday") is not None:
-            schema_dict[vol.Optional("weekday", default=defaults["weekday"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
-        else:
-            schema_dict[vol.Optional("weekday")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
+        schema_dict[vol.Optional("day", default=defaults.get("day", 1))] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
+        schema_dict[vol.Optional("occurrence", default=defaults.get("occurrence", 1))] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+        schema_dict[vol.Optional("weekday", default=defaults.get("weekday", 0))] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
         
         data_schema = vol.Schema(schema_dict)
 
@@ -1239,28 +1227,16 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         # Build schema with defaults - use user_input if there's an error, otherwise use existing_holiday
         defaults = user_input if (user_input and errors) else (user_input if user_input else existing_holiday)
         
-        # Build field dict, only adding defaults for optional fields if they have values
+        # Build field dict, defaulting selector fields to the displayed slider starting values
         schema_dict: dict = cast(dict, {
             vol.Required("name", default=defaults.get("name", "")): str,
             vol.Required("holiday_type", default=defaults.get("holiday_type", defaults.get("type", "fixed"))): vol.In(["fixed", "nth_weekday", "last_weekday"]),
             vol.Required("month", default=defaults.get("month", 1)): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
         })
         
-        # Add optional fields only with defaults if they have values
-        if "day" in defaults and defaults.get("day") is not None:
-            schema_dict[vol.Optional("day", default=defaults["day"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
-        else:
-            schema_dict[vol.Optional("day")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
-        
-        if "occurrence" in defaults and defaults.get("occurrence") is not None:
-            schema_dict[vol.Optional("occurrence", default=defaults["occurrence"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
-        else:
-            schema_dict[vol.Optional("occurrence")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
-        
-        if "weekday" in defaults and defaults.get("weekday") is not None:
-            schema_dict[vol.Optional("weekday", default=defaults["weekday"])] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
-        else:
-            schema_dict[vol.Optional("weekday")] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
+        schema_dict[vol.Optional("day", default=defaults.get("day", 1))] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=31)))
+        schema_dict[vol.Optional("occurrence", default=defaults.get("occurrence", 1))] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+        schema_dict[vol.Optional("weekday", default=defaults.get("weekday", 0))] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=6)))
         
         data_schema = vol.Schema(schema_dict)
 

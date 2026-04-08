@@ -204,6 +204,20 @@ class TestClockworkOptionsFlowCustomHolidays:
         assert "data_schema" in result
 
     @pytest.mark.asyncio
+    async def test_add_custom_holiday_form_defaults_to_slider_values(self, options_flow):
+        """Test custom holiday form defaults match slider start values."""
+        result = await options_flow.async_step_custom_holiday()
+        schema = result["data_schema"]
+
+        data = schema({"name": "Test Holiday"})
+
+        assert data["holiday_type"] == "fixed"
+        assert data["month"] == 1
+        assert data["day"] == 1
+        assert data["occurrence"] == 1
+        assert data["weekday"] == 0
+
+    @pytest.mark.asyncio
     async def test_add_custom_holiday_success(self, options_flow):
         """Test successfully adding a custom holiday."""
         with patch.object(options_flow, '_save_custom_holiday') as mock_save:
