@@ -186,3 +186,8 @@ class LastTriggeredCondition(Condition):
                 return False
 
         return checker
+
+    async def _async_check(self, **kwargs) -> bool:
+        """Compatibility check entry point for newer Home Assistant versions."""
+        checker = await self.async_get_checker()
+        return checker(**kwargs)
