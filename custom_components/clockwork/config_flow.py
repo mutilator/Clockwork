@@ -122,7 +122,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         
         for field in fields_to_check:
             entity_id = user_input.get(field, "")
-            if entity_id and entity_id not in entity_map:
+            # Entities without a unique_id (e.g. YAML template sensors) never
+            # reach the entity registry, so the state machine is the fallback --
+            # otherwise perfectly valid entities are rejected as missing.
+            if entity_id and entity_id not in entity_map and not self.hass.states.get(entity_id):
                 missing_entities.append(entity_id)
         
         if missing_entities:
@@ -158,20 +161,22 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         _LOGGER.debug(f"Datetime validation: Validating entity '{entity_id}'")
         
         entity_registry = er.async_get(self.hass)
-        entity = None
-        
-        for reg_entity in entity_registry.entities.values():
-            if reg_entity.entity_id == entity_id:
-                entity = reg_entity
-                break
-        
-        if not entity:
-            error_msg = f"Entity '{entity_id}' not found in registry"
+        entity = entity_registry.async_get(entity_id)
+        state = self.hass.states.get(entity_id)
+
+        if not entity and not state:
+            error_msg = f"Entity '{entity_id}' not found"
             _LOGGER.debug(f"Datetime validation: {error_msg}")
             return False, error_msg
-        
-        domain = entity.domain
-        device_class = entity.device_class
+
+        # Entities without a unique_id are absent from the registry but still
+        # usable, so fall back to the entity_id and its state attributes.
+        if entity:
+            domain = entity.domain
+            device_class = entity.device_class
+        else:
+            domain = entity_id.split(".")[0]
+            device_class = None
         
         _LOGGER.debug(f"Datetime validation: Entity '{entity_id}' has domain='{domain}', device_class='{device_class}' (type: {type(device_class).__name__})")
         
@@ -188,7 +193,6 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
             
             # If not in registry, check state attributes
             if device_class is None:
-                state = self.hass.states.get(entity_id)
                 if state and "device_class" in state.attributes:
                     device_class = state.attributes["device_class"]
                     _LOGGER.debug(f"Datetime validation: Found device_class in state attributes: '{device_class}'")
@@ -205,6 +209,64 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         error_msg = f"Entity '{entity_id}' (domain: {domain}) is not suitable for datetime calculations. Use entities from: time, calendar, input_datetime, or sensor (with date/timestamp device_class)."
         _LOGGER.debug(f"Datetime validation: {error_msg}")
         return False, error_msg
+
+    def _calculation_name_in_use(self, name: str, exclude_index: Optional[int] = None) -> bool:
+        """Check whether a calculation name is already taken.
+
+        Entity unique IDs are derived from the normalised name, so two
+        calculations sharing one would collide and Home Assistant would silently
+        drop the second entity.
+
+        Args:
+            name: The proposed calculation name
+            exclude_index: Index to skip, when renaming an existing calculation
+
+        Returns:
+            True if another calculation already uses this name
+        """
+        normalized = (name or "").strip().replace(" ", "_").lower()
+        if not normalized:
+            return False
+
+        calculations = self.config_entry.options.get(
+            CONF_CALCULATIONS,
+            self.config_entry.data.get(CONF_CALCULATIONS, [])
+        )
+        for index, calc in enumerate(calculations):
+            if index == exclude_index:
+                continue
+            if calc.get("name", "").strip().replace(" ", "_").lower() == normalized:
+                return True
+        return False
+
+    def _holiday_key_in_use(self, holiday_key: str, exclude_index: Optional[int] = None) -> bool:
+        """Check whether a holiday key is already taken.
+
+        get_holiday_date returns the first match, so a custom holiday reusing a
+        built-in key would be silently shadowed by the built-in definition.
+
+        Args:
+            holiday_key: The generated holiday key
+            exclude_index: Index in custom_holidays to skip, when renaming
+
+        Returns:
+            True if a built-in or another custom holiday already uses this key
+        """
+        if not holiday_key:
+            return False
+
+        builtin = self.hass.data.get(DOMAIN, {}).get("holidays", {})
+        for holiday in builtin.get("holidays", []):
+            if holiday.get("key") == holiday_key:
+                return True
+
+        custom_holidays = self.config_entry.options.get("custom_holidays", [])
+        for index, holiday in enumerate(custom_holidays):
+            if index == exclude_index:
+                continue
+            if holiday.get("key") == holiday_key:
+                return True
+        return False
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None):
         """Manage the options - show main menu."""
@@ -373,6 +435,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("entity_id"):
                 errors["base"] = "missing_entity_id"
             elif (interval := user_input.get("update_interval")) is not None and interval <= 0:
@@ -477,6 +541,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("entity_id"):
                 errors["base"] = "missing_entity_id"
             elif not user_input.get("attribute"):
@@ -582,6 +648,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("entity_id"):
                 errors["base"] = "missing_entity_id"
             elif not user_input.get("offset"):
@@ -657,6 +725,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("datetime_entity"):
                 errors["base"] = "missing_entity_id"
             elif not user_input.get("offset"):
@@ -735,6 +805,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("start_datetime_entity"):
                 errors["base"] = "missing_start_entity"
             elif not user_input.get("end_datetime_entity"):
@@ -791,6 +863,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("season"):
                 errors["base"] = "missing_season"
             elif user_input.get("season") not in ["spring", "summer", "autumn", "winter"]:
@@ -830,6 +904,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("months"):
                 errors["base"] = "missing_months"
             else:
@@ -868,6 +944,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("holiday"):
                 errors["base"] = "missing_holiday"
             else:
@@ -953,6 +1031,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("start_datetime_entity"):
                 errors["base"] = "missing_start_entity"
             elif not user_input.get("end_datetime_entity"):
@@ -1033,6 +1113,8 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif self._calculation_name_in_use(user_input["name"]):
+                errors["base"] = "duplicate_name"
             elif not user_input.get("start_datetime_entity"):
                 errors["base"] = "missing_start_entity"
             elif not user_input.get("end_datetime_entity"):
@@ -1089,6 +1171,12 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif not _generate_holiday_key(user_input["name"]):
+                # Names with no letters or digits reduce to an empty key, which
+                # would produce an unusable entity unique_id.
+                errors["base"] = "invalid_holiday_name"
+            elif self._holiday_key_in_use(_generate_holiday_key(user_input["name"])):
+                errors["base"] = "duplicate_holiday"
             elif not user_input.get("holiday_type"):
                 errors["base"] = "missing_holiday_type"
             else:
@@ -1193,6 +1281,13 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not user_input.get("name"):
                 errors["base"] = "missing_name"
+            elif not _generate_holiday_key(user_input["name"]):
+                errors["base"] = "invalid_holiday_name"
+            elif self._holiday_key_in_use(
+                _generate_holiday_key(user_input["name"]),
+                exclude_index=self._selected_holiday_index,
+            ):
+                errors["base"] = "duplicate_holiday"
             elif not user_input.get("holiday_type"):
                 errors["base"] = "missing_holiday_type"
             else:
@@ -1969,6 +2064,27 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
                 holiday_key = _generate_holiday_key(holiday_name)
             else:
                 holiday_key = original_key
+
+            # A regenerated key means the auto-created date sensor's unique_id
+            # changes, so the old entity has to go. Entity reconciliation in
+            # __init__ deliberately leaves holiday sensors alone while
+            # auto_create_holidays is on (the default), so without this the old
+            # sensor would linger in the registry forever, never updating again.
+            if original_key and holiday_key != original_key:
+                from homeassistant.helpers import entity_registry as er
+
+                entity_registry = er.async_get(self.hass)
+                stale_unique_id = f"{DOMAIN}_{self.config_entry.entry_id}_holiday_{original_key}"
+                for entity_id, entity in list(entity_registry.entities.items()):
+                    if (
+                        entity.config_entry_id == self.config_entry.entry_id
+                        and entity.unique_id == stale_unique_id
+                    ):
+                        _LOGGER.info(
+                            f"Removing holiday date sensor {entity_id} after rename "
+                            f"'{original_key}' -> '{holiday_key}'"
+                        )
+                        entity_registry.async_remove(entity_id)
             
             holiday = {
                 "key": holiday_key,
@@ -2179,7 +2295,10 @@ class ClockworkOptionsFlowHandler(config_entries.OptionsFlow):
         
         # Scan automations
         try:
-            scan_result = scan_automations_for_time_usage(self.hass)
+            # Reads and parses automations.yaml, so it must not run on the event loop
+            scan_result = await self.hass.async_add_executor_job(
+                scan_automations_for_time_usage, self.hass
+            )
             automations = scan_result.get("automations", [])
         except Exception as err:
             _LOGGER.error(f"Error scanning automations: {err}")

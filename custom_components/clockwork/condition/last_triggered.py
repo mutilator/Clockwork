@@ -158,28 +158,35 @@ class LastTriggeredCondition(Condition):
                     f"config={self.config}"
                 )
 
-                # Check comparisons
-                if "above" in options:
-                    threshold = options["above"]
-                    result = seconds_since_trigger > threshold
-                    _LOGGER.debug(f"[LAST_TRIGGERED] above check: {seconds_since_trigger} > {threshold} = {result}")
-                    return result
+                # Evaluate every operator that was supplied and require all of
+                # them, so a combined bound such as above=60 with below=300 means
+                # "between". Previously only the first operator was honoured.
+                # The `is not None` guards also stop an empty field from raising
+                # a TypeError that the outer handler would swallow into False.
+                checks = []
+                if options.get("above") is not None:
+                    result = seconds_since_trigger > options["above"]
+                    _LOGGER.debug(f"[LAST_TRIGGERED] above check: {seconds_since_trigger} > {options['above']} = {result}")
+                    checks.append(result)
 
-                if "below" in options:
-                    threshold = options["below"]
-                    result = seconds_since_trigger < threshold
-                    _LOGGER.debug(f"[LAST_TRIGGERED] below check: {seconds_since_trigger} < {threshold} = {result}")
-                    return result
+                if options.get("below") is not None:
+                    result = seconds_since_trigger < options["below"]
+                    _LOGGER.debug(f"[LAST_TRIGGERED] below check: {seconds_since_trigger} < {options['below']} = {result}")
+                    checks.append(result)
 
-                if "equal_to" in options:
-                    threshold = options["equal_to"]
-                    result = seconds_since_trigger == threshold
-                    _LOGGER.debug(f"[LAST_TRIGGERED] equal_to check: {seconds_since_trigger} == {threshold} = {result}")
-                    return result
+                if options.get("equal_to") is not None:
+                    result = seconds_since_trigger == options["equal_to"]
+                    _LOGGER.debug(f"[LAST_TRIGGERED] equal_to check: {seconds_since_trigger} == {options['equal_to']} = {result}")
+                    checks.append(result)
 
-                # Should not reach here due to schema validation
-                _LOGGER.error(f"[LAST_TRIGGERED] No comparison operator found in options: {options}")
-                return False
+                if not checks:
+                    # Should not reach here due to schema validation
+                    _LOGGER.error(f"[LAST_TRIGGERED] No comparison operator found in options: {options}")
+                    return False
+
+                overall = all(checks)
+                _LOGGER.debug(f"[LAST_TRIGGERED] Condition result ({len(checks)} operator(s)): {overall}")
+                return overall
 
             except Exception as e:
                 _LOGGER.error(f"[LAST_TRIGGERED] Unexpected error evaluating condition: {e}")

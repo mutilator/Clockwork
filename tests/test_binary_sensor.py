@@ -1,6 +1,6 @@
 """Tests for Clockwork binary sensor entities."""
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch, AsyncMock
 
 from homeassistant.core import HomeAssistant
@@ -72,15 +72,20 @@ class TestClockworkOffsetBinarySensor:
         entry = MagicMock()
 
         sensor = ClockworkOffsetBinarySensor(config, mock_hass, entry)
+        sensor.async_write_ha_state = MagicMock()
+        sensor.async_get_last_state = AsyncMock(return_value=None)
+        mock_hass.states.get.return_value = None
 
         # Mock async_track_state_change_event
         with patch('custom_components.clockwork.binary_sensor.async_track_state_change_event') as mock_track:
-            with patch('custom_components.clockwork.binary_sensor.async_track_time_interval') as mock_timer:
-                with patch('threading.get_ident', return_value=1):  # Mock thread ID to match loop_thread_id
-                    await sensor.async_added_to_hass()
-                    mock_track.assert_called_once()
+            with patch('threading.get_ident', return_value=1):  # Mock thread ID to match loop_thread_id
+                await sensor.async_added_to_hass()
+                mock_track.assert_called_once()
+                # An initial state is published immediately rather than waiting
+                # for a timer tick.
+                sensor.async_write_ha_state.assert_called_once()
 
-    def test_icon_property(self, mock_hass):
+    async def test_icon_property(self, mock_hass):
         """Test that icon property is accessible."""
         config = {
             "name": "Test Offset",
@@ -428,9 +433,12 @@ class TestBinarySensorExtraAttributes:
         config = {"name": "Test", "entity_id": "binary_sensor.test", "offset": "1 hour", "offset_mode": "latch"}
         entry = MagicMock()
         sensor = ClockworkOffsetBinarySensor(config, mock_hass, entry)
-        
+        mock_hass.states.get.return_value = MagicMock()
+
         attrs = sensor.extra_state_attributes
-        assert attrs == config
+        assert config.items() <= attrs.items()
+        # trigger_time is exposed so a pending offset survives a restart
+        assert attrs["trigger_time"] is None
 
     def test_season_extra_attributes_contains_config(self, mock_hass):
         """Test season sensor extra attributes contain config."""
@@ -558,3 +566,204 @@ class TestSeasonBinarySensorEdgeCases:
         entry = MagicMock()
         sensor = ClockworkMonthBinarySensor(config, mock_hass, entry)
         assert sensor._months == [1, 5, 12]
+
+class TestMidnightScheduling:
+    """Daily binary sensors re-evaluate at local midnight, not on an interval."""
+
+    @pytest.mark.asyncio
+    async def test_season_sensor_updates_at_midnight(self, mock_hass):
+        """Season sensor schedules on the local-midnight wall clock."""
+        config = {"name": "Test", "season": "summer", "hemisphere": "northern"}
+        sensor = ClockworkSeasonBinarySensor(config, mock_hass, MagicMock())
+        sensor.async_write_ha_state = MagicMock()
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_time_change') as mock_change:
+            with patch('custom_components.clockwork.binary_sensor.async_track_time_interval') as mock_interval:
+                await sensor.async_added_to_hass()
+
+        mock_interval.assert_not_called()
+        assert mock_change.call_args.kwargs == {"hour": 0, "minute": 0, "second": 0}
+
+    @pytest.mark.asyncio
+    async def test_month_sensor_updates_at_midnight(self, mock_hass):
+        """Month sensor schedules on the local-midnight wall clock."""
+        config = {"name": "Test", "months": "6,7,8"}
+        sensor = ClockworkMonthBinarySensor(config, mock_hass, MagicMock())
+        sensor.async_write_ha_state = MagicMock()
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_time_change') as mock_change:
+            with patch('custom_components.clockwork.binary_sensor.async_track_time_interval') as mock_interval:
+                await sensor.async_added_to_hass()
+
+        mock_interval.assert_not_called()
+        assert mock_change.call_args.kwargs == {"hour": 0, "minute": 0, "second": 0}
+
+
+class TestOffsetSensorScheduling:
+    """Offset sensor fires on exact transition times and survives restarts."""
+
+    def _sensor(self, mock_hass, **overrides):
+        config = {
+            "name": "Test",
+            "entity_id": "binary_sensor.test",
+            "offset": "30 seconds",
+            "offset_mode": "latch",
+            "trigger_on": "on",
+        }
+        config.update(overrides)
+        sensor = ClockworkOffsetBinarySensor(config, mock_hass, MagicMock())
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_pending_trigger_schedules_exact_point_in_time(self, mock_hass):
+        """A pending offset arms a one-shot timer at the deadline, not a poll."""
+        sensor = self._sensor(mock_hass)
+        deadline = datetime.now(timezone.utc) + timedelta(seconds=30)
+        sensor._trigger_time = deadline
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time') as mock_point:
+            sensor._update_state()
+
+        mock_point.assert_called_once()
+        assert mock_point.call_args[0][2] == deadline
+        assert sensor.is_on is False
+
+    def test_elapsed_latch_schedules_nothing(self, mock_hass):
+        """Once a latch has fired there is no further unattended transition."""
+        sensor = self._sensor(mock_hass)
+        sensor._trigger_time = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time') as mock_point:
+            sensor._update_state()
+
+        mock_point.assert_not_called()
+        assert sensor.is_on is True
+
+    def test_pulse_schedules_end_of_pulse(self, mock_hass):
+        """Pulse mode arms a second timer for the end of the pulse."""
+        sensor = self._sensor(mock_hass, offset_mode="pulse", pulse_duration="10 seconds")
+        triggered_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        sensor._trigger_time = triggered_at
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time') as mock_point:
+            sensor._update_state()
+
+        mock_point.assert_called_once()
+        assert mock_point.call_args[0][2] == triggered_at + timedelta(seconds=10)
+        assert sensor.is_on is True
+
+    def test_rescheduling_cancels_previous_timer(self, mock_hass):
+        """Re-arming releases the old one-shot timer instead of leaking it."""
+        sensor = self._sensor(mock_hass)
+        previous = MagicMock()
+        sensor._remove_timer = previous
+        sensor._trigger_time = datetime.now(timezone.utc) + timedelta(seconds=30)
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time'):
+            sensor._update_state()
+
+        previous.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_trigger_time_restored_across_restart(self, mock_hass):
+        """A pending offset is rehydrated from the restored state."""
+        sensor = self._sensor(mock_hass)
+        deadline = datetime.now(timezone.utc) + timedelta(seconds=30)
+        restored = MagicMock()
+        restored.attributes = {"trigger_time": deadline.isoformat()}
+        sensor.async_get_last_state = AsyncMock(return_value=restored)
+        mock_hass.states.get.return_value = None
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_state_change_event'):
+            with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time'):
+                await sensor.async_added_to_hass()
+
+        assert sensor._trigger_time == deadline
+
+    @pytest.mark.asyncio
+    async def test_source_state_seeded_on_add(self, mock_hass):
+        """Duration mode knows the source state without waiting for a change."""
+        sensor = self._sensor(mock_hass, offset_mode="duration")
+        sensor.async_get_last_state = AsyncMock(return_value=None)
+        source = MagicMock()
+        source.state = "on"
+        mock_hass.states.get.return_value = source
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_state_change_event'):
+            await sensor.async_added_to_hass()
+
+        assert sensor._source_is_on is True
+
+    @pytest.mark.asyncio
+    async def test_entity_appearing_does_not_retrigger(self, mock_hass):
+        """A None -> on event at startup must not re-arm the offset."""
+        sensor = self._sensor(mock_hass)
+        sensor.async_get_last_state = AsyncMock(return_value=None)
+        mock_hass.states.get.return_value = None
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_state_change_event') as mock_track:
+            with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time'):
+                await sensor.async_added_to_hass()
+                listener = mock_track.call_args[0][2]
+
+                new_state = MagicMock()
+                new_state.state = "on"
+                event = MagicMock()
+                event.data = {"old_state": None, "new_state": new_state}
+                listener(event)
+
+        assert sensor._trigger_time is None
+
+    @pytest.mark.asyncio
+    async def test_cancelled_trigger_releases_pending_timer(self, mock_hass):
+        """Turning the source off in duration mode disarms the pending timer."""
+        sensor = self._sensor(mock_hass, offset_mode="duration", trigger_on="on")
+        sensor.async_get_last_state = AsyncMock(return_value=None)
+        mock_hass.states.get.return_value = None
+
+        with patch('custom_components.clockwork.binary_sensor.async_track_state_change_event') as mock_track:
+            with patch('custom_components.clockwork.binary_sensor.async_track_point_in_utc_time'):
+                await sensor.async_added_to_hass()
+                listener = mock_track.call_args[0][2]
+
+                on_state = MagicMock()
+                on_state.state = "on"
+                listener(MagicMock(data={"old_state": MagicMock(), "new_state": on_state}))
+                assert sensor._trigger_time is not None
+
+                pending = MagicMock()
+                sensor._remove_timer = pending
+
+                off_state = MagicMock()
+                off_state.state = "off"
+                listener(MagicMock(data={"old_state": MagicMock(), "new_state": off_state}))
+
+        assert sensor._trigger_time is None
+        pending.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_removal_cancels_both_listener_and_timer(self, mock_hass):
+        """Both the state listener and the one-shot timer are released."""
+        sensor = self._sensor(mock_hass)
+        listener_unsub = MagicMock()
+        timer_unsub = MagicMock()
+        sensor._remove_listener = listener_unsub
+        sensor._remove_timer = timer_unsub
+
+        await sensor.async_will_remove_from_hass()
+
+        listener_unsub.assert_called_once()
+        timer_unsub.assert_called_once()
+
+
+class TestBetweenDatesCleanup:
+    """Between-dates sensor cleans up safely."""
+
+    @pytest.mark.asyncio
+    async def test_removal_before_add_does_not_raise(self, mock_hass):
+        """Removing an entity that was never added must not AttributeError."""
+        config = {"name": "Test", "start_datetime_entity": "input_datetime.a",
+                  "end_datetime_entity": "input_datetime.b"}
+        sensor = ClockworkBetweenDatesSensor(config, mock_hass, MagicMock())
+
+        await sensor.async_will_remove_from_hass()

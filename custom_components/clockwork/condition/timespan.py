@@ -141,35 +141,35 @@ class TimespanCondition(Condition):
                     f"config={self.config}"
                 )
                 
-                # Check comparisons
-                if "above" in options and options["above"] is not None:
-                    above_threshold = options["above"]
-                    _LOGGER.debug(f"[TIMESPAN] Checking 'above': {seconds_since_change} > {above_threshold}")
-                    result = seconds_since_change > above_threshold
-                    _LOGGER.debug(f"[TIMESPAN] above check: {seconds_since_change} > {above_threshold} = {result}")
-                    _LOGGER.info(f"[TIMESPAN] Condition result (above): {result}")
-                    return result
-                
-                if "below" in options and options["below"] is not None:
-                    below_threshold = options["below"]
-                    _LOGGER.debug(f"[TIMESPAN] Checking 'below': {seconds_since_change} < {below_threshold}")
-                    result = seconds_since_change < below_threshold
-                    _LOGGER.debug(f"[TIMESPAN] below check: {seconds_since_change} < {below_threshold} = {result}")
-                    _LOGGER.info(f"[TIMESPAN] Condition result (below): {result}")
-                    return result
-                
-                if "equal_to" in options and options["equal_to"] is not None:
-                    equal_threshold = options["equal_to"]
-                    _LOGGER.debug(f"[TIMESPAN] Checking 'equal_to': {seconds_since_change} == {equal_threshold}")
-                    result = seconds_since_change == equal_threshold
-                    _LOGGER.debug(f"[TIMESPAN] equal_to check: {seconds_since_change} == {equal_threshold} = {result}")
-                    _LOGGER.info(f"[TIMESPAN] Condition result (equal_to): {result}")
-                    return result
-                
-                # Default: return True if no operator specified (entity exists and has last_changed)
-                _LOGGER.debug("[TIMESPAN] No comparison operator specified, returning True")
-                _LOGGER.info("[TIMESPAN] Condition result (no operator): True")
-                return True
+                # Evaluate every operator that was supplied and require all of
+                # them. The schema allows more than one, and the visual editor
+                # offers all three, so "above 60 and below 300" must mean
+                # between -- previously only the first operator was honoured and
+                # the rest were silently ignored.
+                checks = []
+                if options.get("above") is not None:
+                    result = seconds_since_change > options["above"]
+                    _LOGGER.debug(f"[TIMESPAN] above check: {seconds_since_change} > {options['above']} = {result}")
+                    checks.append(result)
+
+                if options.get("below") is not None:
+                    result = seconds_since_change < options["below"]
+                    _LOGGER.debug(f"[TIMESPAN] below check: {seconds_since_change} < {options['below']} = {result}")
+                    checks.append(result)
+
+                if options.get("equal_to") is not None:
+                    result = seconds_since_change == options["equal_to"]
+                    _LOGGER.debug(f"[TIMESPAN] equal_to check: {seconds_since_change} == {options['equal_to']} = {result}")
+                    checks.append(result)
+
+                if not checks:
+                    # No operator specified: entity exists and has last_changed
+                    _LOGGER.debug("[TIMESPAN] No comparison operator specified, returning True")
+                    return True
+
+                overall = all(checks)
+                _LOGGER.debug(f"[TIMESPAN] Condition result ({len(checks)} operator(s)): {overall}")
+                return overall
                 
             except Exception as e:
                 _LOGGER.error(f"[TIMESPAN] Error evaluating condition: {e}", exc_info=True)

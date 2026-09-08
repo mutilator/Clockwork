@@ -8,13 +8,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_point_in_utc_time,
+    async_track_state_change_event,
+    async_track_time_change,
+    async_track_time_interval,
+)
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, CONF_CALCULATIONS, CALC_TYPE_OFFSET, CALC_TYPE_SEASON, CALC_TYPE_MONTH, CALC_TYPE_BETWEEN_DATES, CALC_TYPE_OUTSIDE_DATES
 from .utils import is_in_season, parse_offset, is_datetime_between, parse_datetime_or_date
 
 _LOGGER = logging.getLogger(__name__)
+
+# Exposed as an attribute so a pending offset survives a restart/reload
+ATTR_TRIGGER_TIME = "trigger_time"
 
 
 async def async_setup_entry(
@@ -47,7 +56,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class ClockworkOffsetBinarySensor(BinarySensorEntity):
+class ClockworkOffsetBinarySensor(BinarySensorEntity, RestoreEntity):
     """Binary sensor for offset calculations."""
 
     def __init__(self, config: Dict[str, Any], hass: HomeAssistant, config_entry: ConfigEntry) -> None:
@@ -64,6 +73,7 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
         self._trigger_on = config.get("trigger_on", "on")  # on or off (for duration mode)
         self._source_is_on = False
         self._remove_listener = None
+        self._remove_timer = None
 
     @property
     def name(self) -> str:
@@ -99,6 +109,7 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
         attrs = dict(self._config)
+        attrs[ATTR_TRIGGER_TIME] = self._trigger_time.isoformat() if self._trigger_time else None
         # Add error info if source entity is missing
         if self._entity_id and not self.hass.states.get(self._entity_id):
             attrs["_error"] = f"Source entity '{self._entity_id}' not found. It may have been deleted or renamed."
@@ -106,9 +117,28 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
+        await super().async_added_to_hass()
+
+        # Restore any pending/elapsed trigger so a restart or an options reload
+        # does not silently drop a latch or an offset that is still counting down.
+        last_state = await self.async_get_last_state()
+        if last_state is not None and (restored := last_state.attributes.get(ATTR_TRIGGER_TIME)):
+            self._trigger_time = dt_util.parse_datetime(restored)
+
+        # Seed the source state so duration mode is correct from the first write
+        # instead of assuming the source is off.
+        if self._entity_id and (source_state := self.hass.states.get(self._entity_id)):
+            self._source_is_on = source_state.state == "on"
+
         @callback
         def state_change_listener(event):
             """Handle state changes."""
+            # old_state is None when the source entity first appears (HA startup
+            # or a reload of its integration). That is not a real transition, so
+            # re-arming here would spuriously re-trigger on every restart.
+            if event.data.get("old_state") is None:
+                return
+
             new_state = event.data.get("new_state")
             if new_state and new_state.state == "on":
                 self._source_is_on = True
@@ -125,26 +155,60 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
                 elif self._mode == "duration":
                     # In duration mode with trigger_on="on", turn off when source turns off
                     self._trigger_time = None
-                    self._is_on = False
-                    self.async_write_ha_state()
+                    # Go through _update_state so the pending transition timer is
+                    # released rather than left armed for a cancelled trigger.
+                    self._update_state()
                 elif self._mode == "pulse":
                     # In pulse mode, cancel trigger
                     self._trigger_time = None
-                    self._is_on = False
-                    self.async_write_ha_state()
+                    self._update_state()
 
         self._remove_listener = async_track_state_change_event(
             self.hass, [self._entity_id] if self._entity_id else [], state_change_listener
         )
 
-        # Check periodically
-        @callback
-        def check_trigger(now):
-            """Check if trigger time has passed."""
-            self._update_state()
+        # Publish an initial state and arm the transition timer. Without this the
+        # sensor stayed unwritten until the first poll tick after being added.
+        self._update_state()
 
-        # Schedule check every minute, but can be improved with event
-        self._remove_listener = async_track_time_interval(self.hass, check_trigger, timedelta(minutes=1))
+    @callback
+    def _schedule_next_transition(self) -> None:
+        """Arm a one-shot timer for the exact moment this sensor next flips.
+
+        The only unattended transitions are the trigger deadline and, in pulse
+        mode, the end of the pulse. Firing on those exact points is accurate to
+        the second, where the previous one-minute poll could be up to 60s late --
+        which made sub-minute offsets meaningless.
+        """
+        if self._remove_timer:
+            self._remove_timer()
+            self._remove_timer = None
+
+        if not self._trigger_time:
+            return
+
+        now = dt_util.utcnow()
+        if now < self._trigger_time:
+            next_time = self._trigger_time
+        elif self._mode == "pulse":
+            pulse_end = self._trigger_time + timedelta(seconds=self._pulse_duration_seconds)
+            if now >= pulse_end:
+                return
+            next_time = pulse_end
+        else:
+            # latch/duration have already reached their deadline; nothing further
+            # happens without a source state change.
+            return
+
+        self._remove_timer = async_track_point_in_utc_time(
+            self.hass, self._handle_transition, next_time
+        )
+
+    @callback
+    def _handle_transition(self, now: datetime) -> None:
+        """Re-evaluate when a scheduled transition time is reached."""
+        self._remove_timer = None
+        self._update_state()
 
     @callback
     def _update_state(self) -> None:
@@ -188,13 +252,18 @@ class ClockworkOffsetBinarySensor(BinarySensorEntity):
         except (ValueError, TypeError, AttributeError) as err:
             _LOGGER.error(f"Error updating offset binary sensor state: {err}")
             self._is_on = False
-        
+
+        self._schedule_next_transition()
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
         """Clean up listeners when entity is removed."""
         if self._remove_listener:
             self._remove_listener()
+            self._remove_listener = None
+        if self._remove_timer:
+            self._remove_timer()
+            self._remove_timer = None
 
 
 class ClockworkSeasonBinarySensor(BinarySensorEntity):
@@ -262,8 +331,11 @@ class ClockworkSeasonBinarySensor(BinarySensorEntity):
             """Check if current date is in season."""
             self._update_state()
 
-        # Check daily
-        self._remove_listener = async_track_time_interval(self.hass, check_season, timedelta(days=1))
+        # Re-evaluate at local midnight so season boundaries flip on the correct
+        # calendar day instead of up to 24 hours late.
+        self._remove_listener = async_track_time_change(
+            self.hass, check_season, hour=0, minute=0, second=0
+        )
 
     @callback
     def _update_state(self) -> None:
@@ -340,8 +412,10 @@ class ClockworkMonthBinarySensor(BinarySensorEntity):
             """Check if current month is in list."""
             self._update_state()
 
-        # Check daily
-        self._remove_listener = async_track_time_interval(self.hass, check_month, timedelta(days=1))
+        # Re-evaluate at local midnight so the month rolls over on the 1st.
+        self._remove_listener = async_track_time_change(
+            self.hass, check_month, hour=0, minute=0, second=0
+        )
 
     @callback
     def _update_state(self) -> None:
@@ -377,6 +451,7 @@ class ClockworkBetweenDatesSensor(BinarySensorEntity):
         self._start_datetime_entity = config.get("start_datetime_entity")
         self._end_datetime_entity = config.get("end_datetime_entity")
         self._remove_listener = None
+        self._remove_timer = None
 
     @property
     def name(self) -> str:

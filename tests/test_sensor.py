@@ -739,3 +739,67 @@ class TestClockworkHolidayDateSensor:
             # Check the 4th positional argument (custom_holidays)
             if len(call_args) >= 4:
                 assert call_args[3] == custom_holidays
+
+
+class TestMidnightScheduling:
+    """Daily sensors re-evaluate at local midnight, not on a 24h interval."""
+
+    @pytest.mark.asyncio
+    async def test_holiday_countdown_updates_at_midnight(self, mock_hass):
+        """The countdown rolls over with the calendar day, not with uptime."""
+        config = {"name": "Days to Christmas", "type": CALC_TYPE_HOLIDAY, "holiday": "christmas"}
+        sensor = ClockworkHolidaySensor(config, mock_hass, [], MagicMock())
+        sensor.async_write_ha_state = MagicMock()
+
+        with patch('custom_components.clockwork.sensor.async_track_time_change') as mock_change:
+            with patch('custom_components.clockwork.sensor.async_track_time_interval') as mock_interval:
+                await sensor.async_added_to_hass()
+
+        mock_interval.assert_not_called()
+        assert mock_change.call_args.kwargs == {"hour": 0, "minute": 0, "second": 0}
+
+    @pytest.mark.asyncio
+    async def test_holiday_date_updates_at_midnight(self, mock_hass):
+        """The holiday date rolls to the new year on Jan 1, not 24h after boot."""
+        sensor = ClockworkHolidayDateSensor(
+            hass=mock_hass,
+            config_entry=MagicMock(),
+            holiday_key="christmas",
+            holiday_name="Christmas",
+        )
+        sensor.async_write_ha_state = MagicMock()
+
+        with patch('custom_components.clockwork.sensor.async_track_time_change') as mock_change:
+            with patch('custom_components.clockwork.sensor.async_track_time_interval') as mock_interval:
+                await sensor.async_added_to_hass()
+
+        mock_interval.assert_not_called()
+        assert mock_change.call_args.kwargs == {"hour": 0, "minute": 0, "second": 0}
+
+
+class TestTimespanUpdateInterval:
+    """The configured interval is clamped to a value that cannot busy-loop."""
+
+    def test_zero_interval_from_legacy_config_falls_back(self, mock_hass):
+        """Entries saved before validation could hold 0; that must not be used."""
+        config = {"name": "T", "entity_id": "binary_sensor.a", "update_interval": 0}
+        sensor = ClockworkTimespanSensor(config, mock_hass, MagicMock())
+        assert sensor._update_interval == 60
+
+    def test_negative_interval_falls_back(self, mock_hass):
+        """Negative intervals are equally invalid."""
+        config = {"name": "T", "entity_id": "binary_sensor.a", "update_interval": -30}
+        sensor = ClockworkTimespanSensor(config, mock_hass, MagicMock())
+        assert sensor._update_interval == 60
+
+    def test_unparseable_interval_falls_back(self, mock_hass):
+        """A non-numeric value must not raise at entity construction."""
+        config = {"name": "T", "entity_id": "binary_sensor.a", "update_interval": "abc"}
+        sensor = ClockworkTimespanSensor(config, mock_hass, MagicMock())
+        assert sensor._update_interval == 60
+
+    def test_valid_interval_is_preserved(self, mock_hass):
+        """A sane configured interval is passed through untouched."""
+        config = {"name": "T", "entity_id": "binary_sensor.a", "update_interval": 15}
+        sensor = ClockworkTimespanSensor(config, mock_hass, MagicMock())
+        assert sensor._update_interval == 15

@@ -26,7 +26,7 @@
 - **Holiday Countdowns**: Built-in US holidays plus custom holiday support
 - **Date Range Checks**: Determine if current time is within or outside a range
 - **Custom Automation Conditions**: Duration-based conditions for automations (check how long since entity changed or automation was last triggered)
-- **Calendar Services**: Get, update, and delete calendar events (requires calendar integration)
+- **Calendar Services**: Update and delete calendar events (requires calendar integration)
 - **No YAML Required**: All configuration through intuitive Home Assistant UI
 - **Real-time Updates**: Configurable update intervals for time-based sensors
 - **Flexible Triggering**: Control which state changes trigger offset calculations

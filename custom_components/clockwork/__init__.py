@@ -2,23 +2,15 @@
 import logging
 import json
 import datetime
-import dataclasses
 from pathlib import Path
-from collections.abc import Iterable
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.components.calendar import CalendarEntity
 from homeassistant.components.calendar.const import DOMAIN as CALENDAR_DOMAIN, CalendarEntityFeature
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
-from homeassistant.util.json import JsonValueType
-from homeassistant.core import ServiceResponse, SupportsResponse
 
 from .const import DOMAIN, PLATFORMS, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, SERVICE_SCAN_AUTOMATIONS
 from .diagnostics import async_get_config_entry_diagnostics
@@ -27,7 +19,6 @@ from .utils import scan_automations_for_time_usage
 _LOGGER = logging.getLogger(__name__)
 
 # Service constants for calendar operations
-SERVICE_GET_EVENTS = "get_events"
 SERVICE_DELETE_EVENT = "delete_event"
 SERVICE_UPDATE_EVENT = "update_event"
 SERVICE_DELETE_EVENTS_IN_RANGE = "delete_events_in_range"
@@ -39,29 +30,15 @@ CONF_END_DATE = "end_date"
 CONF_RECURRENCE_ID = "recurrence_id"
 CONF_RECURRENCE_RANGE = "recurrence_range"
 
+# How far either side of today to scan when locating an event by uid; the
+# calendar platform offers no lookup-by-id, only a date range.
+EVENT_LOOKUP_WINDOW = datetime.timedelta(days=365 * 5)
+
 # Import condition module to register automation conditions (only if platform is available)
 try:
     from . import condition  # noqa: F401
 except ImportError:
     _LOGGER.debug("Automation condition platform not available in this Home Assistant version")
-
-
-def _list_events_dict_factory(
-    obj: Iterable[tuple[str, Any]],
-) -> dict[str, JsonValueType]:
-    """Convert CalendarEvent dataclass items to dictionary of attributes."""
-    result: dict[str, str] = {}
-    for name, value in obj:
-        if isinstance(value, (datetime.datetime, datetime.date)):
-            result[name] = value.isoformat()
-        elif value is not None:
-            result[name] = str(value)
-    
-    # Filter to keep only important fields
-    return {
-        k: v for k, v in result.items() 
-        if k in {"start", "end", "summary", "description", "location", "uid", "recurrence_id", "recurrence_range"}
-    }
 
 
 def _load_json_file(filename: str) -> dict:
@@ -156,9 +133,11 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             raise HomeAssistantError("Calendar does not support updating events")
 
         try:
-            # Fetch existing event to merge updates with required fields
-            dt_start = dt_util.now() - datetime.timedelta(days=365)
-            dt_end = dt_util.now() + datetime.timedelta(days=365)
+            # The calendar platform has no lookup-by-uid API, so the event has to
+            # be found by scanning a window. Keep it wide enough to cover events
+            # a few years out (recurring birthdays, anniversaries).
+            dt_start = dt_util.now() - EVENT_LOOKUP_WINDOW
+            dt_end = dt_util.now() + EVENT_LOOKUP_WINDOW
             events = await calendar_entity.async_get_events(hass, dt_start, dt_end)
             
             existing_event = None
@@ -168,7 +147,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     break
             
             if existing_event is None:
-                raise HomeAssistantError(f"Event {event_id} not found in calendar {calendar_id}")
+                raise HomeAssistantError(
+                    f"Event {event_id} not found in calendar {calendar_id} within "
+                    f"{EVENT_LOOKUP_WINDOW.days} days of today"
+                )
             
             # Merge new event data with existing event data
             # Convert existing event to dict for merging
@@ -198,10 +180,23 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         """Delete all events within a date range."""
         try:
             calendar_id = call.data[CONF_CALENDAR_ID]
+        except KeyError as e:
+            raise HomeAssistantError(f"Missing parameter: {str(e)}")
+
+        try:
             start_date = dt_util.as_local(datetime.datetime.fromisoformat(call.data[CONF_START_DATE])).date()
             end_date = dt_util.as_local(datetime.datetime.fromisoformat(call.data[CONF_END_DATE])).date()
         except KeyError as e:
             raise HomeAssistantError(f"Missing parameter: {str(e)}")
+        except (ValueError, TypeError) as e:
+            raise HomeAssistantError(
+                f"Invalid date format, expected ISO 8601 (e.g. 2026-01-31): {str(e)}"
+            )
+
+        if end_date < start_date:
+            raise HomeAssistantError(
+                f"end_date ({end_date}) must not be earlier than start_date ({start_date})"
+            )
 
         entity_component = hass.data.get("entity_components", {}).get(CALENDAR_DOMAIN)
         calendar_entity = None
@@ -377,7 +372,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         Returns results directly and also fires an event for backward compatibility.
         """
-        result = scan_automations_for_time_usage(hass)
+        # Reads and parses automations.yaml, so it must not run on the event loop
+        result = await hass.async_add_executor_job(scan_automations_for_time_usage, hass)
         _LOGGER.info(f"Scan automations service: Found {len(result['automations'])} automations with time/date patterns")
         
         # Fire event for backward compatibility (listeners can still use this)

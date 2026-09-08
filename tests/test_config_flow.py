@@ -10,7 +10,7 @@ from custom_components.clockwork.config_flow import (
     ClockworkOptionsFlowHandler,
     _generate_holiday_key,
 )
-from custom_components.clockwork.const import CONF_CALCULATIONS
+from custom_components.clockwork.const import CONF_CALCULATIONS, DOMAIN
 
 
 class TestGenerateHolidayKey:
@@ -78,6 +78,9 @@ class TestClockworkOptionsFlow:
         flow = ClockworkOptionsFlowHandler()
         # Mock the config_entry property to avoid HA deprecation warning
         type(flow).config_entry = mock_config_entry
+        # Home Assistant always assigns hass before running a step
+        flow.hass = MagicMock()
+        flow.hass.data = {DOMAIN: {"holidays": {"holidays": []}, "seasons": {}}}
         return flow
 
     @pytest.mark.asyncio
@@ -192,6 +195,9 @@ class TestClockworkOptionsFlowCustomHolidays:
         flow = ClockworkOptionsFlowHandler()
         # Mock the config_entry property to avoid HA deprecation warning
         type(flow).config_entry = mock_config_entry
+        # Home Assistant always assigns hass before running a step
+        flow.hass = MagicMock()
+        flow.hass.data = {DOMAIN: {"holidays": {"holidays": []}, "seasons": {}}}
         return flow
 
     @pytest.mark.asyncio
@@ -858,3 +864,280 @@ class TestConfigFlowScanAutomations:
         
         # Just verify the class exists and has the method
         assert hasattr(ClockworkOptionsFlowHandler, 'async_step_scan_automations')
+
+class TestDuplicateValidation:
+    """Names must stay unique: entity unique IDs are derived from them."""
+
+    @pytest.fixture
+    def mock_config_entry(self):
+        """Config entry with one existing calculation and one custom holiday."""
+        entry = MagicMock(spec=config_entries.ConfigEntry)
+        entry.entry_id = "test_entry"
+        entry.options = {
+            CONF_CALCULATIONS: [
+                {"name": "Kitchen Motion", "type": "timespan", "entity_id": "binary_sensor.kitchen"},
+            ],
+            "custom_holidays": [
+                {"key": "pay_day", "name": "Pay Day", "type": "fixed", "month": 1, "day": 15},
+            ],
+        }
+        entry.data = {}
+        return entry
+
+    @pytest.fixture
+    def options_flow(self, mock_config_entry):
+        """Options flow handler with the built-in holiday cache populated."""
+        flow = ClockworkOptionsFlowHandler()
+        type(flow).config_entry = mock_config_entry
+        flow.hass = MagicMock()
+        flow.hass.data = {
+            DOMAIN: {
+                "holidays": {"holidays": [{"key": "christmas", "name": "Christmas"}]},
+                "seasons": {},
+            }
+        }
+        return flow
+
+    def test_existing_calculation_name_is_detected(self, options_flow):
+        """An exact match is a conflict."""
+        assert options_flow._calculation_name_in_use("Kitchen Motion") is True
+
+    def test_name_comparison_normalizes_like_unique_id(self, options_flow):
+        """Names that normalize to the same unique_id conflict."""
+        # unique_id lowercases and replaces spaces, so these all collide
+        assert options_flow._calculation_name_in_use("kitchen motion") is True
+        assert options_flow._calculation_name_in_use("KITCHEN MOTION") is True
+        assert options_flow._calculation_name_in_use("  Kitchen Motion  ") is True
+
+    def test_unused_name_is_allowed(self, options_flow):
+        """A genuinely new name is fine."""
+        assert options_flow._calculation_name_in_use("Hallway Motion") is False
+
+    def test_rename_excludes_itself(self, options_flow):
+        """Editing a calculation without renaming it is not a conflict."""
+        assert options_flow._calculation_name_in_use("Kitchen Motion", exclude_index=0) is False
+
+    @pytest.mark.asyncio
+    async def test_create_step_rejects_duplicate_name(self, options_flow):
+        """The create form reports the conflict rather than saving a collision."""
+        with patch.object(options_flow, '_save_calculation') as mock_save:
+            result = await options_flow.async_step_timespan({
+                "name": "Kitchen Motion",
+                "entity_id": "binary_sensor.other",
+            })
+
+        mock_save.assert_not_called()
+        assert result["type"] == "form"
+        assert result["errors"]["base"] == "duplicate_name"
+
+    def test_builtin_holiday_key_is_detected(self, options_flow):
+        """A custom holiday must not shadow a built-in one."""
+        assert options_flow._holiday_key_in_use("christmas") is True
+
+    def test_existing_custom_holiday_key_is_detected(self, options_flow):
+        """Two custom holidays cannot share a key."""
+        assert options_flow._holiday_key_in_use("pay_day") is True
+
+    def test_holiday_rename_excludes_itself(self, options_flow):
+        """Editing a holiday without renaming it is not a conflict."""
+        assert options_flow._holiday_key_in_use("pay_day", exclude_index=0) is False
+
+    def test_unused_holiday_key_is_allowed(self, options_flow):
+        """A genuinely new holiday key is fine."""
+        assert options_flow._holiday_key_in_use("bin_day") is False
+
+    @pytest.mark.asyncio
+    async def test_custom_holiday_rejects_builtin_collision(self, options_flow):
+        """Naming a custom holiday 'Christmas' is refused, not silently shadowed."""
+        with patch.object(options_flow, '_save_custom_holiday') as mock_save:
+            result = await options_flow.async_step_custom_holiday({
+                "name": "Christmas",
+                "holiday_type": "fixed",
+                "month": 12,
+                "day": 25,
+            })
+
+        mock_save.assert_not_called()
+        assert result["type"] == "form"
+        assert result["errors"]["base"] == "duplicate_holiday"
+
+    @pytest.mark.asyncio
+    async def test_custom_holiday_rejects_unusable_name(self, options_flow):
+        """A name with no letters or digits yields an empty key, so it is refused."""
+        with patch.object(options_flow, '_save_custom_holiday') as mock_save:
+            result = await options_flow.async_step_custom_holiday({
+                "name": "!!!",
+                "holiday_type": "fixed",
+                "month": 12,
+                "day": 25,
+            })
+
+        mock_save.assert_not_called()
+        assert result["type"] == "form"
+        assert result["errors"]["base"] == "invalid_holiday_name"
+
+
+class TestEntityValidationFallback:
+    """Entities without a unique_id are absent from the registry but usable."""
+
+    @pytest.fixture
+    def options_flow(self):
+        """Options flow with an empty entity registry."""
+        entry = MagicMock(spec=config_entries.ConfigEntry)
+        entry.entry_id = "test_entry"
+        entry.options = {CONF_CALCULATIONS: [], "custom_holidays": []}
+        entry.data = {}
+
+        flow = ClockworkOptionsFlowHandler()
+        type(flow).config_entry = entry
+        flow.hass = MagicMock()
+        flow.hass.data = {DOMAIN: {"holidays": {"holidays": []}, "seasons": {}}}
+        return flow
+
+    def test_unregistered_entity_with_state_is_accepted(self, options_flow):
+        """A YAML template sensor has no unique_id, so only a state exists."""
+        options_flow.hass.states.get.return_value = MagicMock()
+
+        with patch('homeassistant.helpers.entity_registry.async_get') as mock_get_er:
+            mock_er = MagicMock()
+            mock_er.entities.values.return_value = []
+            mock_get_er.return_value = mock_er
+
+            is_valid, error = options_flow._validate_entities_exist(
+                "timespan", {"entity_id": "sensor.template_thing"}
+            )
+
+        assert is_valid is True
+        assert error is None
+
+    def test_entity_absent_everywhere_is_rejected(self, options_flow):
+        """A truly missing entity is still reported."""
+        options_flow.hass.states.get.return_value = None
+
+        with patch('homeassistant.helpers.entity_registry.async_get') as mock_get_er:
+            mock_er = MagicMock()
+            mock_er.entities.values.return_value = []
+            mock_get_er.return_value = mock_er
+
+            is_valid, error = options_flow._validate_entities_exist(
+                "timespan", {"entity_id": "sensor.deleted"}
+            )
+
+        assert is_valid is False
+        assert "sensor.deleted" in error
+
+    def test_unregistered_datetime_entity_uses_domain_from_entity_id(self, options_flow):
+        """Domain is derived from the entity_id when there is no registry entry."""
+        options_flow.hass.states.get.return_value = MagicMock(attributes={})
+
+        with patch('homeassistant.helpers.entity_registry.async_get') as mock_get_er:
+            mock_er = MagicMock()
+            mock_er.async_get.return_value = None
+            mock_get_er.return_value = mock_er
+
+            is_valid, error = options_flow._validate_datetime_entity("input_datetime.yaml_helper")
+
+        assert is_valid is True
+        assert error is None
+
+
+class TestCustomHolidayRename:
+    """Renaming a custom holiday changes its key, so the old sensor must go."""
+
+    @pytest.fixture
+    def options_flow(self):
+        """Options flow holding one custom holiday."""
+        entry = MagicMock(spec=config_entries.ConfigEntry)
+        entry.entry_id = "test_entry"
+        entry.options = {
+            CONF_CALCULATIONS: [],
+            "custom_holidays": [
+                {"key": "pay_day", "name": "Pay Day", "type": "fixed", "month": 1, "day": 15},
+            ],
+        }
+        entry.data = {}
+
+        flow = ClockworkOptionsFlowHandler()
+        type(flow).config_entry = entry
+        flow.hass = MagicMock()
+        flow.hass.data = {DOMAIN: {"holidays": {"holidays": []}, "seasons": {}}}
+        flow.hass.config_entries.async_reload = AsyncMock()
+        flow._selected_holiday_index = 0
+        return flow
+
+    def _registry_with_holiday_sensor(self, key):
+        """Entity registry containing the auto-created date sensor for `key`."""
+        entity = MagicMock()
+        entity.config_entry_id = "test_entry"
+        entity.unique_id = f"clockwork_test_entry_holiday_{key}"
+        registry = MagicMock()
+        registry.entities.items.return_value = [("sensor.clockwork_pay_day_date", entity)]
+        return registry
+
+    @pytest.mark.asyncio
+    async def test_rename_removes_stale_holiday_sensor(self, options_flow):
+        """The sensor carrying the old key is removed instead of being orphaned."""
+        registry = self._registry_with_holiday_sensor("pay_day")
+
+        with patch('homeassistant.helpers.entity_registry.async_get', return_value=registry):
+            await options_flow._update_custom_holiday(0, {
+                "name": "Salary Day",
+                "holiday_type": "fixed",
+                "month": 1,
+                "day": 15,
+            })
+
+        registry.async_remove.assert_called_once_with("sensor.clockwork_pay_day_date")
+
+        # The stored holiday carries the regenerated key
+        saved = options_flow.hass.config_entries.async_update_entry.call_args
+        assert saved.kwargs["options"]["custom_holidays"][0]["key"] == "salary_day"
+
+    @pytest.mark.asyncio
+    async def test_edit_without_rename_keeps_sensor(self, options_flow):
+        """Changing only the date must not disturb the existing sensor."""
+        registry = self._registry_with_holiday_sensor("pay_day")
+
+        with patch('homeassistant.helpers.entity_registry.async_get', return_value=registry):
+            await options_flow._update_custom_holiday(0, {
+                "name": "Pay Day",
+                "holiday_type": "fixed",
+                "month": 1,
+                "day": 20,
+            })
+
+        registry.async_remove.assert_not_called()
+        saved = options_flow.hass.config_entries.async_update_entry.call_args
+        assert saved.kwargs["options"]["custom_holidays"][0]["key"] == "pay_day"
+
+
+class TestScanAutomationsOffLoop:
+    """Reading automations.yaml must not block the event loop."""
+
+    @pytest.fixture
+    def options_flow(self):
+        """Minimal options flow for the scan step."""
+        entry = MagicMock(spec=config_entries.ConfigEntry)
+        entry.entry_id = "test_entry"
+        entry.options = {CONF_CALCULATIONS: [], "custom_holidays": []}
+        entry.data = {}
+
+        flow = ClockworkOptionsFlowHandler()
+        type(flow).config_entry = entry
+        flow.hass = MagicMock()
+        flow.hass.data = {DOMAIN: {"holidays": {"holidays": []}, "seasons": {}}}
+        return flow
+
+    @pytest.mark.asyncio
+    async def test_scan_step_uses_executor(self, options_flow):
+        """The config flow hands the file read to the executor."""
+        from custom_components.clockwork.utils import scan_automations_for_time_usage
+
+        options_flow.hass.async_add_executor_job = AsyncMock(return_value={"automations": []})
+
+        result = await options_flow.async_step_scan_automations()
+
+        options_flow.hass.async_add_executor_job.assert_called_once_with(
+            scan_automations_for_time_usage, options_flow.hass
+        )
+        assert result["type"] == "form"

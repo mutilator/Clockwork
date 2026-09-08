@@ -35,8 +35,6 @@ async def async_get_config_entry_diagnostics(
     Returns:
         Dictionary containing diagnostic data
     """
-    entry_data = hass.data[DOMAIN].get(entry.entry_id, {})
-
     # Build configuration summary
     config_summary = {
         "entry_title": entry.title,
@@ -67,9 +65,10 @@ async def async_get_config_entry_diagnostics(
         elif calc.get("type") == "offset":
             calc_info.update({
                 "entity_id": calc.get("entity_id"),
-                "offset_seconds": calc.get("offset_seconds", 0),
+                "offset": calc.get("offset"),
+                "pulse_duration": calc.get("pulse_duration"),
                 "trigger_on": calc.get("trigger_on", "on"),
-                "mode": calc.get("mode", "pulse"),
+                "offset_mode": calc.get("offset_mode", "latch"),
             })
         elif calc.get("type") == "datetime_offset":
             calc_info.update({
@@ -121,7 +120,7 @@ async def async_get_config_entry_diagnostics(
     cached_data = hass.data[DOMAIN]
     cached_data_info = {
         "holidays_loaded": "holidays" in cached_data,
-        "holidays_count": len(cached_data.get("holidays", {})),
+        "holidays_count": len(cached_data.get("holidays", {}).get("holidays", [])),
         "seasons_loaded": "seasons" in cached_data,
         "seasons_hemispheres": list(cached_data.get("seasons", {}).keys()),
     }

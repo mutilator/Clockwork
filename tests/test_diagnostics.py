@@ -287,7 +287,13 @@ class TestDiagnosticsCachedData:
     @pytest.mark.asyncio
     async def test_diagnostics_cached_data_status(self, mock_hass, mock_config_entry):
         """Test cached data status in diagnostics."""
-        mock_hass.data["clockwork"]["holidays"] = {"christmas": "2024-12-25"}
+        # Matches the real cache shape written by async_setup_entry
+        mock_hass.data["clockwork"]["holidays"] = {
+            "holidays": [
+                {"key": "christmas", "name": "Christmas", "type": "fixed", "month": 12, "day": 25},
+                {"key": "new_years_day", "name": "New Year's Day", "type": "fixed", "month": 1, "day": 1},
+            ]
+        }
         mock_hass.data["clockwork"]["seasons"] = {
             "northern": [{"month": 3, "day": 20}],
             "southern": [{"month": 9, "day": 22}]
@@ -303,7 +309,8 @@ class TestDiagnosticsCachedData:
             
             cached = result["cached_data"]
             assert cached["holidays_loaded"] is True
-            assert cached["holidays_count"] == 1
+            # Counts the holiday entries, not the wrapper dict
+            assert cached["holidays_count"] == 2
             assert cached["seasons_loaded"] is True
             assert "northern" in cached["seasons_hemispheres"]
             assert "southern" in cached["seasons_hemispheres"]
@@ -496,3 +503,41 @@ class TestDiagnosticsEdgeCases:
             
             assert len(result["calculations"]) == 1
             assert result["calculations"][0]["type"] == "unknown_type"
+
+
+class TestDiagnosticsOffsetKeys:
+    """Diagnostics must read the keys the config flow actually writes."""
+
+    @pytest.mark.asyncio
+    async def test_offset_calculation_reports_real_config(self, mock_hass, mock_config_entry):
+        """The flow stores 'offset'/'offset_mode', not 'offset_seconds'/'mode'."""
+        mock_config_entry.options = {
+            "calculations": [
+                {
+                    "name": "Porch Delay",
+                    "type": "offset",
+                    "entity_id": "binary_sensor.porch",
+                    "offset": "30 seconds",
+                    "offset_mode": "pulse",
+                    "pulse_duration": "10 seconds",
+                    "trigger_on": "off",
+                }
+            ],
+            "custom_holidays": [],
+        }
+
+        with patch('homeassistant.helpers.entity_registry.async_get') as mock_get_er:
+            mock_er = MagicMock()
+            mock_er.entities.values.return_value = []
+            mock_get_er.return_value = mock_er
+
+            result = await async_get_config_entry_diagnostics(mock_hass, mock_config_entry)
+
+        calc = result["calculations"][0]
+        assert calc["offset"] == "30 seconds"
+        assert calc["offset_mode"] == "pulse"
+        assert calc["pulse_duration"] == "10 seconds"
+        assert calc["trigger_on"] == "off"
+        # The old, always-default keys are gone
+        assert "offset_seconds" not in calc
+        assert "mode" not in calc

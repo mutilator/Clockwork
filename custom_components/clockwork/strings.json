@@ -389,7 +389,10 @@
       "missing_months": "Months are required",
       "missing_holiday": "Holiday is required",
       "missing_holiday_type": "Holiday type is required",
-      "interval_positive": "Update interval must be greater than 0"
+      "interval_positive": "Update interval must be greater than 0",
+      "duplicate_name": "A calculation with this name already exists. Names must be unique because entity IDs are derived from them.",
+      "duplicate_holiday": "A holiday with this name already exists (built-in or custom). Choose a different name.",
+      "invalid_holiday_name": "Holiday name must contain at least one letter or number."
     },
     "abort": {
       "no_calculations": "No calculations to delete",

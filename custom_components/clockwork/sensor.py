@@ -8,7 +8,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+    async_track_time_interval,
+)
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, CONF_CALCULATIONS, CONF_AUTO_CREATE_HOLIDAYS, CALC_TYPE_TIMESPAN, CALC_TYPE_HOLIDAY, CALC_TYPE_DATETIME_OFFSET, CALC_TYPE_DATE_RANGE, CALC_TYPE_ATTRIBUTE
@@ -80,7 +84,20 @@ class ClockworkTimespanSensor(SensorEntity):
         self._last_change = None
         self._entity_id = config.get("entity_id")
         self._name = config.get("name", f"Timespan {self._entity_id}")
-        self._update_interval = config.get("update_interval", 60)  # Default 60 seconds
+        # Entries saved before the config flow enforced a minimum may hold 0 or a
+        # negative value; a non-positive interval busy-loops the event loop, so
+        # fall back to the default rather than trusting it.
+        try:
+            interval = int(config.get("update_interval", 60))
+        except (TypeError, ValueError):
+            interval = 60
+        if interval < 1:
+            _LOGGER.warning(
+                f"Invalid update_interval {interval!r} for timespan sensor "
+                f"'{config.get('name')}'; falling back to 60 seconds"
+            )
+            interval = 60
+        self._update_interval = interval
         self._track_state = config.get("track_state", "on")  # Default "on" for backward compatibility
         self._remove_listener = None
         self._remove_timer = None
@@ -426,8 +443,11 @@ class ClockworkHolidaySensor(SensorEntity):
             """Check days to holiday."""
             self._update_state()
 
-        # Check daily
-        self._remove_timer = async_track_time_interval(self.hass, check_holiday, timedelta(days=1))
+        # Recalculate at local midnight so the countdown rolls over with the
+        # calendar day rather than drifting to whenever HA was last restarted.
+        self._remove_timer = async_track_time_change(
+            self.hass, check_holiday, hour=0, minute=0, second=0
+        )
 
     @callback
     def _update_state(self) -> None:
@@ -635,14 +655,15 @@ class ClockworkHolidayDateSensor(SensorEntity):
         # Initial state
         self._update_state()
 
-        # Update daily at midnight
+        # Update at local midnight so the date rolls to the new year on Jan 1
+        # rather than up to 24 hours late.
         @callback
         def update_daily(now):
             """Update the holiday date daily."""
             self._update_state()
 
-        self._remove_timer = async_track_time_interval(
-            self.hass, update_daily, timedelta(days=1)
+        self._remove_timer = async_track_time_change(
+            self.hass, update_daily, hour=0, minute=0, second=0
         )
 
     @callback
